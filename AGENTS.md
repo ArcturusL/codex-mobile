@@ -1,5 +1,42 @@
 # AGENTS.md
 
+## 本 fork 的项目基调（2026-09-11）
+
+本节记录项目所有者在本轮对话中确定的长期方向；与后文继承自上游的环境假设或工作流程冲突时，以本节为准。后续任务默认延续这些约定，直到项目所有者明确调整。
+
+### 维护目标
+
+- 维护仓库为 `https://github.com/ArcturusL/codex-mobile`。项目所有者反馈原作者约四个月未更新，现有功能对最新 Codex 的支持存在缺口，项目自身也有 bug；本 fork 用于持续适配和修复。
+- 优先保证日常使用可靠，再逐步补齐 Codex 新特性；采用范围明确、便于验证和回退的小步变更。
+- 适配“最新 Codex”时，应核实当时的官方文档、实际安装版本和接口行为，不把本文件中的日期或旧版本假设当成当前事实。记录验证过的 WebUI 与 Codex CLI / app-server 版本组合。
+
+### 双环境运行目标
+
+- 部署主机是当前这台腾讯云 Ubuntu 服务器，已有正在使用的 Codex 服务。后续开发与部署须保留现有服务的可用性。
+- **稳定环境（stable）**：固定入口为 `https://cd.liyuvu.xyz`，承载日常使用，只运行已验证、版本明确且能够回退的发布。
+- **最新环境（latest）**：独立运行最新 Codex WebUI，用于验证 Codex 新版本兼容性、本 fork 的新功能及 bug 修复；允许快速迭代，其失败不能影响稳定环境。
+- 两个环境须能同时运行，并可分别启动、停止、升级和回退。最新环境使用独立端口和访问入口；具体域名、端口及服务映射在实施时根据现状确定并记录，本轮未指定。
+- 代码/发布目录、构建产物、服务进程、运行时依赖与配置、日志应按环境隔离。尤其要固定各环境使用的 Codex 可执行文件及版本，避免一次全局升级同时改变两个环境。
+- 默认分别使用独立的 Codex 数据目录（通过各自服务配置指定 `CODEX_HOME`）和可写状态，避免新版迁移、清理或并发写入损坏稳定环境的会话、配置、认证状态及数据库。若需要共享数据或项目工作目录，先明确共享范围、兼容性、写入责任和备份恢复方式。
+
+### 发布与回滚
+
+- 发布顺序为：在独立开发分支/工作树修改 → 在最新环境验证 → 固定候选版本及产物 → 按部署任务范围升级稳定环境。代码合并本身不等于稳定环境发布。
+- 稳定发布须记录 Git commit/tag、锁定的依赖、WebUI 与 Codex 版本、启动方式及非敏感配置说明；使用可追溯的发布目录或镜像标识。不得依赖浮动的 `latest` 标签或每次启动重新解析包版本来恢复稳定环境。
+- 每次升级稳定环境前，至少保留当前可用版本及其完整运行所需产物、配置恢复依据，并对会被变更的持久化数据制作一致性备份。凭据与备份存放于仓库之外，限制访问，不写入 Git 或任务输出。
+- 每次稳定发布应提供可执行的发布和回滚步骤，标明操作对象、检查项、预计中断和成功判据。回退应能恢复到上一个已知可用版本，不依赖故障时重新下载依赖或重新构建旧版本。
+- 数据回滚与代码回滚须分别评估。涉及状态格式、数据库或配置迁移时，先验证旧版能否读取新版写入的数据；若不能，须有匹配版本的一致性备份、恢复步骤，并说明恢复备份可能丢失的升级后数据。不得直接覆盖正在写入的生产数据。
+- 发布检查覆盖本次改动及登录、会话加载、发送/流式回复、刷新恢复、移动端访问等受影响的核心路径，并检查反向代理和实时连接。首次建立发布机制或修改回滚机制时，在隔离环境验证回滚步骤；失败时停止晋级并按既定方案恢复。
+
+### 本机现状与操作边界
+
+- 本 fork 的开发仓库位于 `/home/ubuntu/codex-mobile/data/codex-mobile`。此前使用 `git clone --depth 1` 拉取，属于浅克隆；需要更早历史、标签或合并依据时，先补齐相关 Git 历史，不假设旧提交已在本地。
+- 2026-09-11 只读检查发现 `codex-mobile.service` 与 `codex-web.service` 均处于运行状态，其工作目录分别为 `/workspace` 与 `/opt/codex-web-host/current/app`。这些是检查时的快照；执行操作前须重新核实实际进程、运行版本、端口、数据目录和域名路由，不仅凭服务名认定 stable/latest 的映射。
+- `/home/ubuntu/codex-mobile` 下还存在 Compose 文件及备份，不能据此假设现役服务由 Docker 管理。以实际进程、服务管理器及反向代理配置为准。
+- 不直接在正在提供稳定服务的发布目录进行开发、构建或覆盖安装。启动测试服务前先核实端口归属；上游文档中的 `4173`、`5173`、tmux、Oracle、OrbStack 等仅为历史环境约定，不能替代本机检查。
+- 本项目用于通过域名远程访问，不适用“仅本地用户访问、可忽略远程调用风险”的上游假设。部署和相关修改须考虑实际反向代理、HTTPS、鉴权及 WebSocket/流式连接行为；不得将上游无密码测试命令直接用于远程服务。
+- 本轮授权的是记录项目基调，不包含切换域名、重启现役服务或实施双环境部署。后续明确请求开发或部署时，按该任务授权完成必要工作；上游的提交、推送、PR、包发布和远程测试流程不自动构成对外发布或生产变更的授权。
+
 ## Git Workflow
 
 - Before any merge, rebase, sync, or continuation after interruption, re-check live state:
@@ -29,7 +66,7 @@
 - For PR update + review requests: push branch, update PR summary/verification notes when changed, then post a plain PR comment containing exactly `/review`.
 - Do not use draft reviews or batch review APIs to trigger Qodo.
 - Before applying a bot fix, inspect the current code path and classify the comment as real, stale/resolved, rejected, or docs-only.
-- This app server is local-user facing and is not intended to be exposed as a public internet service. Reject Qodo/CodeRabbit security hardening comments that assume a hostile remote caller for local project import/export, including saved-root allowlists, import parent restrictions, ZIP upload caps, or local path redaction, unless they identify a concrete path where this local-only server becomes remotely reachable or bypasses existing authentication.
+- This fork is accessed remotely through a domain and reverse proxy. Evaluate Qodo/CodeRabbit security comments against the actual deployment and authentication boundaries; do not reject a concrete remote-access issue based on the upstream local-only assumption. Keep fixes scoped to verified behavior and risk.
 - Prefer a focused regression test for accepted bugs. After fixing, run the narrow test plus relevant build/typecheck, push, and re-check PR comments/status.
 - Completion reports must distinguish confirmed fixes from stale or rejected bot comments.
 
