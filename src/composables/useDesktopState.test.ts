@@ -685,6 +685,40 @@ describe('automatic conversation titles', () => {
 })
 
 describe('conversation activity history', () => {
+  it('keeps a live message timestamp stable and accepts its recovered history time', async () => {
+    installTestWindow()
+    let notify: (value: { method: string; params: unknown; atIso?: string }) => void = () => {}
+    gatewayMocks.subscribeCodexNotifications.mockImplementation((handler) => { notify = handler; return vi.fn() })
+    gatewayMocks.resumeThread.mockResolvedValue(null)
+    const detail = { messages: [] as UiMessage[], inProgress: true, activeTurnId: 'turn', turnIndexByTurnId: { turn: 0 } }
+    gatewayMocks.getThreadDetail.mockResolvedValue(detail)
+    const state = useDesktopState()
+    state.primeSelectedThread('timestamp-thread')
+    await state.loadMessages('timestamp-thread')
+    state.startPolling()
+    const first = '2026-09-22T01:02:03.000Z'
+    for (const atIso of [first, '2026-09-22T01:02:04.000Z']) {
+      notify({ method: 'item/agentMessage/delta', atIso, params: { threadId: 'timestamp-thread', turnId: 'turn', itemId: 'answer', delta: 'Hello' } })
+    }
+    notify({ method: 'item/completed', atIso: '2026-09-22T01:02:09.000Z', params: {
+      threadId: 'timestamp-thread', turnId: 'turn', item: { id: 'answer', type: 'agentMessage', text: 'HelloHello' },
+    } })
+    expect(state.messages.value.find((message) => message.id === 'answer')?.createdAtIso).toBe(first)
+    detail.messages = [{ id: 'answer', role: 'assistant', text: 'HelloHello', messageType: 'agentMessage', createdAtIso: first }]
+    await state.loadMessages('timestamp-thread', { force: true })
+    expect(state.messages.value.find((message) => message.id === 'answer')?.createdAtIso).toBe(first)
+    // Timestamp-only updates must not be discarded by message identity reuse.
+    const recovered = '2026-09-22T01:02:02.000Z'
+    detail.messages = [{ ...detail.messages[0], createdAtIso: recovered }]
+    await state.loadMessages('timestamp-thread', { force: true })
+    expect(state.messages.value.find((message) => message.id === 'answer')?.createdAtIso).toBe(recovered)
+    state.stopPolling()
+    const reloaded = useDesktopState()
+    reloaded.primeSelectedThread('timestamp-thread')
+    await reloaded.loadMessages('timestamp-thread')
+    expect(reloaded.messages.value.find((message) => message.id === 'answer')?.createdAtIso).toBe(recovered)
+  })
+
   it('keeps completed activities until history takes over and refreshes a just-loaded turn once', async () => {
     installTestWindow()
     const threadId = 'activity-thread'

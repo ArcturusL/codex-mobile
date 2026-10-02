@@ -8,6 +8,7 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
+| [Message timestamps](message-timestamps.md) |
 | [LaTeX math in conversation messages](latex-math-rendering.md) |
 | [Composer skill layout and file search feedback](composer-search-feedback.md) |
 | [Thinking and command history after completion](conversation-activity-history.md) |

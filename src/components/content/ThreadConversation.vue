@@ -23,7 +23,7 @@
       <template v-for="message in visibleMessages" :key="message.id">
       <li
         v-if="!hiddenGroupedCommandIds.has(message.id) && !hiddenFileChangeMessageIds.has(message.id)"
-        class="conversation-item"
+        class="conversation-item conversation-item-message"
         :data-role="message.role"
         :data-message-type="message.messageType || ''"
         :data-turn-id="message.turnId"
@@ -769,6 +769,11 @@
             </article>
           </div>
         </div>
+        <MessageTimestamp
+          v-if="message.messageType !== 'worked'"
+          :value="message.createdAtIso"
+          :data-role="message.role"
+        />
       </li>
       </template>
       <li v-if="liveOverlay" class="conversation-item conversation-item-overlay">
@@ -928,6 +933,7 @@ import IconTablerCopy from '../icons/IconTablerCopy.vue'
 import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerGitFork from '../icons/IconTablerGitFork.vue'
 import IconTablerX from '../icons/IconTablerX.vue'
+import MessageTimestamp from './MessageTimestamp.vue'
 
 type HighlightJsModule = (typeof import('highlight.js/lib/common'))['default']
 
@@ -4612,6 +4618,8 @@ onBeforeUnmount(() => {
 .conversation-item {
   @apply m-0 w-full min-w-0 flex;
 }
+
+.conversation-item-message { flex-direction: column; }
 
 .conversation-item-request {
   @apply justify-center;

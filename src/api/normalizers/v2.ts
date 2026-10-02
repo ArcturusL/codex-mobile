@@ -18,6 +18,7 @@ import type {
   UiThread,
 } from '../../types/codex'
 import { normalizePathForComparison, normalizePathForUi, toProjectName } from '../../pathUtils.js'
+import { toMessageTimestamp } from '../../shared/messageTimestamp'
 
 function toIso(seconds: number): string {
   return new Date(seconds * 1000).toISOString()
@@ -654,8 +655,11 @@ export function normalizeThreadMessagesV2(payload: ThreadReadResponse, baseTurnI
     const items = Array.isArray(turn.items) ? turn.items : []
     const turnMessages: UiMessage[] = []
     for (const item of items) {
+      const rawItem = item as Record<string, unknown>
+      const createdAtIso = toMessageTimestamp(rawItem.createdAtIso)
+        ?? toMessageTimestamp(rawItem.startedAt)
       for (const msg of toUiMessages(item)) {
-        turnMessages.push({ ...msg, turnId, turnIndex })
+        turnMessages.push({ ...msg, ...(createdAtIso ? { createdAtIso } : {}), turnId, turnIndex })
       }
     }
     if (['completed', 'failed', 'interrupted'].includes(turn.status) && turnMessages.some((message) =>

@@ -1916,3 +1916,17 @@
 :root.dark .file-change-review-button {
   @apply border-zinc-700 text-zinc-200 hover:bg-zinc-800;
 }
+
+:root .message-timestamp {
+  display: block;
+  width: 100%;
+  max-width: min(var(--chat-column-max, 45rem), 100%);
+  margin: 4px auto 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.message-timestamp[data-role='user'] { text-align: right; }
+:root.dark .message-timestamp { color: #94a3b8; }
