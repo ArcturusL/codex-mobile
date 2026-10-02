@@ -947,7 +947,12 @@
                     :is-loading-persisted-above="isLoadingOlderMessages"
                     :load-earlier-messages="loadOlderMessages"
                     @fork-thread="onForkThreadFromMessage"
-                    @rollback="onRollback"
+                    :message-branches="selectedMessageBranches"
+                    :is-editing-message="isEditingMessage"
+                    :edit-error="messageEditError"
+                    :is-turn-in-progress="isSelectedThreadInProgress"
+                    @edit-message="onEditMessage"
+                    @select-message-branch="onSelectMessageBranch"
                     @implement-plan="onImplementPlan"
                     @respond-server-request="onRespondServerRequest" />
                 </div>
@@ -982,6 +987,7 @@
                   <ThreadComposer
                     v-else
                     ref="threadComposerRef"
+                    :disabled="isEditingMessage"
                     :active-thread-id="composerThreadContextId"
                     :cwd="composerCwd"
                     :collaboration-modes="availableCollaborationModes"
@@ -1429,7 +1435,9 @@ const {
   startPolling,
   stopPolling,
   primeSelectedThread,
-  rollbackSelectedThread,
+  editSelectedMessage,
+  isEditingMessage,
+  selectedMessageBranches,
 } = useDesktopState()
 
 const route = useRoute()
@@ -3878,21 +3886,37 @@ function onInterruptTurn(): void {
   void interruptSelectedThreadTurn()
 }
 
-function onRollback(payload: { turnId: string }): void {
-  const targetTurnId = payload.turnId.trim()
-  if (targetTurnId.length > 0) {
-    const rollbackUserMessage = [...filteredMessages.value]
-      .reverse()
-      .find((message) => (
-        message.role === 'user'
-        && (message.turnId?.trim() ?? '') === targetTurnId
-        && message.text.trim().length > 0
-      ))
-    if (rollbackUserMessage?.text && threadComposerRef.value) {
-      threadComposerRef.value.appendTextToDraft(rollbackUserMessage.text)
-    }
+const messageEditError = ref('')
+watch(routeThreadId, () => { messageEditError.value = '' })
+
+async function onEditMessage(payload: { turnId: string }): Promise<void> {
+  messageEditError.value = ''
+  const sourceThreadId = selectedThreadId.value
+  const message = filteredMessages.value.find((entry) => entry.role === 'user' && entry.turnId === payload.turnId)
+  if (!message) return
+  const forkedThreadId = await editSelectedMessage(payload.turnId)
+  if (selectedThreadId.value !== sourceThreadId || routeThreadId.value !== sourceThreadId) return
+  if (!forkedThreadId) {
+    messageEditError.value = desktopError.value || 'Failed to edit message'
+    return
   }
-  void rollbackSelectedThread(payload.turnId)
+  // Await route/composer restoration before hydrating the new branch's draft.
+  await router.push({ name: 'thread', params: { threadId: forkedThreadId } })
+  if (selectedThreadId.value !== forkedThreadId) await selectThread(forkedThreadId)
+  await nextTick()
+  if (selectedThreadId.value !== forkedThreadId || sourceThreadId === forkedThreadId) return
+  threadComposerRef.value?.hydrateDraft({
+    text: message.text,
+    imageUrls: [...(message.images ?? [])],
+    fileAttachments: (message.fileAttachments ?? []).map((file) => ({ ...file, fsPath: file.path })),
+    skills: [...(message.skills ?? [])],
+  })
+}
+
+async function onSelectMessageBranch(threadId: string): Promise<void> {
+  if (isEditingMessage.value || !threadId || threadId === selectedThreadId.value) return
+  await router.push({ name: 'thread', params: { threadId } })
+  if (selectedThreadId.value !== threadId) await selectThread(threadId)
 }
 
 function onImplementPlan(payload: { turnId: string }): void {

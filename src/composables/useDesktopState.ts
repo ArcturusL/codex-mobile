@@ -1,3 +1,5 @@
+import { getMessageBranches, persistMessageBranch } from '../api/codexGateway'
+import { messageBranchControls, messageBranchSource, type MessageBranch } from '../shared/messageBranches'
 import { turnDiffMessage } from '../shared/turnDiff'
 import { normalizePermissionMode, type PermissionMode } from '../shared/permissionMode'
 import { computed, ref, watch } from 'vue'
@@ -13,12 +15,12 @@ import {
   getPendingServerRequests,
   getSkillsList,
   getThreadDetail,
+  getThreadSummary,
   getOlderThreadMessages,
   getBackgroundThreadListLimit,
   interruptThreadTurn,
   pickCodexRateLimitSnapshot,
   replyToServerRequest,
-  revertThreadFileChanges,
   rollbackThread,
   getThreadGroupsPage,
   getThreadQueueState,
@@ -1530,7 +1532,12 @@ export function useDesktopState() {
   const isSendingMessage = ref(false)
   const isInterruptingTurn = ref(false)
   const isUpdatingSpeedMode = ref(false)
-  const isRollingBack = ref(false)
+  const isEditingMessage = ref(false)
+  const messageBranches = ref<MessageBranch[]>([])
+  const selectedMessageBranches = computed(() => messageBranchControls(messageBranches.value, selectedThreadId.value))
+  function mergeMessageBranches(branches: MessageBranch[]): void {
+    messageBranches.value = [...new Map([...branches, ...messageBranches.value].map((branch) => [branch.threadId, branch])).values()]
+  }
 
   const error = ref('')
   const isPolling = ref(false)
@@ -4788,6 +4795,7 @@ export function useDesktopState() {
     const awaitAncillaryRefreshes = options.awaitAncillaryRefreshes === true
 
     try {
+      void getMessageBranches().then(mergeMessageBranches).catch(() => {})
       await loadPersistedQueueStateIfNeeded()
       await loadThreads({ force: options.forceThreadRefresh === true })
       if (includeSelectedThreadMessages) {
@@ -5026,7 +5034,7 @@ export function useDesktopState() {
     queueInsertIndex?: number,
     collaborationModeOverride?: CollaborationModeKind,
   ): Promise<void> {
-    if (isUpdatingSpeedMode.value) return
+    if (isUpdatingSpeedMode.value || isEditingMessage.value) return
 
     const threadId = selectedThreadId.value
     const nextText = text.trim()
@@ -5395,44 +5403,71 @@ export function useDesktopState() {
     }
   }
 
-  async function rollbackSelectedThread(turnId: string): Promise<void> {
+  async function editSelectedMessage(turnId: string): Promise<string> {
     const threadId = selectedThreadId.value
-    if (!threadId) return
-    if (isRollingBack.value) return
-    if (!turnId.trim()) return
+    if (!threadId || isEditingMessage.value || isSendingMessage.value) return ''
+    if (inProgressById.value[threadId] || (queuedMessagesByThreadId.value[threadId]?.length ?? 0) > 0) {
+      error.value = 'Finish the current turn and queued messages before editing.'
+      return ''
+    }
+    const message = (persistedMessagesByThreadId.value[threadId] ?? [])
+      .find((entry) => entry.role === 'user' && entry.turnId === turnId)
+    const turnIndex = message?.turnIndex
+    if (typeof turnIndex !== 'number' || turnIndex < 0) return ''
 
-    const persisted = persistedMessagesByThreadId.value[threadId] ?? []
-    const matchedMessage = persisted.find((message) => message.turnId === turnId)
-    const turnIndex = typeof matchedMessage?.turnIndex === 'number' ? matchedMessage.turnIndex : -1
-    if (turnIndex < 0) return
-    const maxTurnIndex = persisted.reduce((max, m) => (typeof m.turnIndex === 'number' && m.turnIndex > max ? m.turnIndex : max), -1)
-    if (maxTurnIndex < 0 || turnIndex > maxTurnIndex) return
-    const numTurns = maxTurnIndex - turnIndex + 1
-    if (numTurns < 1) return
-
-    isRollingBack.value = true
+    isEditingMessage.value = true
     error.value = ''
+    let forkedThreadId = ''
+    let branchSaved = false
     try {
-      const threadCwd = selectedThread.value?.cwd?.trim() ?? ''
-      if (threadCwd) {
-        await revertThreadFileChanges(threadId, turnId, threadCwd)
+      mergeMessageBranches(await getMessageBranches())
+      const source = flattenThreads(sourceGroups.value).find((entry) => entry.id === threadId) ?? await getThreadSummary(threadId)
+      let model = readModelIdForThread(threadId)
+      let nextMessages: UiMessage[] = []
+      if (turnIndex === 0) {
+        // Paginated Codex threads cannot roll back. A first-message edit has no prior turns to fork.
+        const started = await startThread(source.cwd || undefined, model || undefined, readProviderIdForThread(threadId))
+        forkedThreadId = started.threadId
+        model = started.model || model
+        await renameThread(forkedThreadId, source.title || 'Edited chat')
+      } else {
+        let previousTurnId = Object.entries(turnIndexByTurnIdByThreadId.value[threadId] ?? {}).find(([, index]) => index === turnIndex - 1)?.[0]
+        if (!previousTurnId) {
+          const page = await getOlderThreadMessages(threadId, turnId, 1)
+          previousTurnId = Object.entries(page.turnIndexByTurnId).find(([, index]) => index === turnIndex - 1)?.[0]
+        }
+        if (!previousTurnId) throw new Error('Cannot locate the preceding turn in this conversation')
+        const forked = await forkThread(threadId, { lastTurnId: previousTurnId })
+        forkedThreadId = forked.threadId
+        model = forked.model || model
+        // Fail closed if an older app-server ignores the native fork boundary.
+        if (forked.turnCount !== turnIndex) throw new Error('Codex did not fork at the selected message')
+        nextMessages = forked.messages
       }
-      const nextMessages = await rollbackThread(threadId, numTurns)
-      setPersistedMessagesForThread(threadId, nextMessages)
-      setLiveAgentMessagesForThread(threadId, [])
-      clearLiveReasoningForThread(threadId)
-      if (liveActivitiesByThreadId.value[threadId]) {
-        liveActivitiesByThreadId.value = omitKey(liveActivitiesByThreadId.value, threadId)
-      }
-      setTurnSummaryForThread(threadId, null)
-      setTurnActivityForThread(threadId, null)
-      setTurnErrorForThread(threadId, null)
-      pendingThreadsRefresh = true
-      await syncFromNotifications()
+      mergeMessageBranches(await persistMessageBranch({
+        threadId: forkedThreadId,
+        sourceThreadId: messageBranchSource(messageBranches.value, threadId, turnIndex),
+        turnIndex,
+      }))
+      branchSaved = true
+      insertOptimisticThread(forkedThreadId, source.cwd, source.title || 'Edited chat')
+      setThreadModelId(forkedThreadId, model)
+      setThreadModelProviderId(forkedThreadId, readProviderIdForThread(threadId))
+      if (permissionModes.value[threadId]) permissionModes.value = { ...permissionModes.value, [forkedThreadId]: permissionModes.value[threadId] }
+      selectedCollaborationModeByContext.value = { ...selectedCollaborationModeByContext.value, [forkedThreadId]: readSelectedCollaborationMode(selectedCollaborationModeByContext.value, threadId) }
+      setPersistedMessagesForThread(forkedThreadId, nextMessages)
+      const earliestTurn = nextMessages.reduce((min, entry) => Math.min(min, entry.turnIndex ?? Infinity), Infinity)
+      hasMoreOlderMessagesByThreadId.value = { ...hasMoreOlderMessagesByThreadId.value, [forkedThreadId]: Number.isFinite(earliestTurn) && earliestTurn > 0 }
+      replaceTurnIndexLookupForThread(forkedThreadId, Object.fromEntries(nextMessages.filter((entry) => entry.turnId && typeof entry.turnIndex === 'number').map((entry) => [entry.turnId!, entry.turnIndex!])))
+      loadedMessagesByThreadId.value = { ...loadedMessagesByThreadId.value, [forkedThreadId]: true }
+      resumedThreadById.value = { ...resumedThreadById.value, [forkedThreadId]: true }
+      return forkedThreadId
     } catch (unknownError) {
-      error.value = unknownError instanceof Error ? unknownError.message : 'Failed to rollback thread'
+      if (forkedThreadId && !branchSaved) await archiveThread(forkedThreadId).catch(() => {})
+      error.value = unknownError instanceof Error ? unknownError.message : 'Failed to edit message'
+      return ''
     } finally {
-      isRollingBack.value = false
+      isEditingMessage.value = false
     }
   }
 
@@ -5877,7 +5912,6 @@ export function useDesktopState() {
     isSendingMessage,
     isInterruptingTurn,
     isUpdatingSpeedMode,
-    isRollingBack,
 
     error,
     refreshAll,
@@ -5892,7 +5926,9 @@ export function useDesktopState() {
     renameThreadById,
     forkThreadById,
     forkThreadFromTurn,
-    rollbackSelectedThread,
+    editSelectedMessage,
+    isEditingMessage,
+    selectedMessageBranches,
 
     sendMessageToSelectedThread,
     sendMessageToNewThread,

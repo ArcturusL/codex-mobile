@@ -23,8 +23,12 @@ const gatewayMocks = vi.hoisted(() => ({
   getPendingServerRequests: vi.fn(),
   getSkillsList: vi.fn(),
   getThreadDetail: vi.fn(),
+  getThreadSummary: vi.fn(),
+  getOlderThreadMessages: vi.fn(),
   getThreadGroupsPage: vi.fn(),
   getThreadQueueState: vi.fn(),
+  getMessageBranches: vi.fn(),
+  persistMessageBranch: vi.fn(),
   getThreadTitleCache: vi.fn(),
   getWorkspaceRootsState: vi.fn(),
   generateThreadTitle: vi.fn(),
@@ -84,6 +88,8 @@ function installTestWindow(initialStorage: Record<string, string> = {}) {
 beforeEach(() => {
   vi.clearAllMocks()
   gatewayMocks.getThreadQueueState.mockResolvedValue({})
+  gatewayMocks.getMessageBranches.mockResolvedValue([])
+  gatewayMocks.persistMessageBranch.mockImplementation(async (branch) => [branch])
   gatewayMocks.getThreadTitleCache.mockResolvedValue({ titles: {} })
   gatewayMocks.getWorkspaceRootsState.mockRejectedValue(new Error('no workspace roots state'))
   gatewayMocks.generateThreadTitle.mockReset().mockResolvedValue('')
@@ -1710,5 +1716,112 @@ describe('turn diff notifications', () => {
     await state.loadMessages('diff-thread', { force: true })
     expect(state.messages.value.filter((m) => m.fileChangeSource === 'turnDiff')).toHaveLength(1)
     state.stopPolling()
+  })
+})
+
+
+describe('edit message branches', () => {
+  const original: UiMessage[] = [0, 1, 2].flatMap((turnIndex) => [
+    { id: `u${turnIndex}`, role: 'user' as const, text: `question ${turnIndex}`, turnId: `t${turnIndex}`, turnIndex },
+    { id: `a${turnIndex}`, role: 'assistant' as const, text: `answer ${turnIndex}`, turnId: `t${turnIndex}`, turnIndex },
+  ])
+  async function setup(inProgress = false) {
+    installTestWindow()
+    gatewayMocks.resumeThread.mockResolvedValue({ messages: original, inProgress, model: 'gpt-5.5', modelProvider: 'openai', turnIndexByTurnId: { t0: 0, t1: 1, t2: 2 } })
+    gatewayMocks.forkThread.mockReset().mockResolvedValue({ threadId: 'edited', cwd: '/tmp/project', model: 'gpt-5.5', messages: original.slice(0, 2), turnCount: 1 })
+    gatewayMocks.rollbackThread.mockReset()
+    gatewayMocks.getThreadSummary.mockResolvedValue(thread('original', '/tmp/project'))
+    gatewayMocks.startThread.mockReset().mockResolvedValue({ threadId: 'edited', model: 'gpt-5.5', modelProvider: 'openai' })
+    gatewayMocks.archiveThread.mockReset().mockResolvedValue(undefined)
+    const state = useDesktopState()
+    state.primeSelectedThread('original')
+    await state.loadMessages('original')
+    return state
+  }
+
+  it('forks before the selected turn, preserves the original, and sends only to the branch', async () => {
+    const state = await setup()
+    expect(await state.editSelectedMessage('t1')).toBe('edited')
+    state.primeSelectedThread('edited')
+    expect(gatewayMocks.forkThread).toHaveBeenCalledExactlyOnceWith('original', { lastTurnId: 't0' })
+    expect(gatewayMocks.rollbackThread).not.toHaveBeenCalled()
+    expect(gatewayMocks.revertThreadFileChanges).not.toHaveBeenCalled()
+    expect(state.messages.value.map((message) => message.text)).toEqual(['question 0', 'answer 0'])
+    expect(state.selectedMessageBranches.value).toEqual([{ turnIndex: 1, threadIds: ['original', 'edited'], selectedIndex: 1 }])
+    state.primeSelectedThread('original')
+    expect(state.messages.value).toEqual(original)
+    state.primeSelectedThread('edited')
+    gatewayMocks.startThreadTurn.mockResolvedValue('new-turn')
+    await state.sendMessageToSelectedThread('edited question')
+    expect(gatewayMocks.startThreadTurn.mock.calls[0]?.[0]).toBe('edited')
+  })
+
+  it('blocks sends and repeated clicks until fork finishes; failure preserves the source', async () => {
+    const state = await setup()
+    let fail!: (error: Error) => void
+    gatewayMocks.forkThread.mockImplementation(() => new Promise((_, reject) => { fail = reject }))
+    const editing = state.editSelectedMessage('t1')
+    await vi.waitFor(() => expect(gatewayMocks.forkThread).toHaveBeenCalled())
+    await state.sendMessageToSelectedThread('must not append')
+    expect(gatewayMocks.startThreadTurn).not.toHaveBeenCalled()
+    expect(await state.editSelectedMessage('t1')).toBe('')
+    expect(gatewayMocks.forkThread).toHaveBeenCalledTimes(1)
+    fail(new Error('fork unavailable'))
+    expect(await editing).toBe('')
+    expect(state.selectedThreadId.value).toBe('original')
+    expect(state.messages.value).toEqual(original)
+    expect(gatewayMocks.persistMessageBranch).not.toHaveBeenCalled()
+    expect(gatewayMocks.archiveThread).not.toHaveBeenCalled()
+    expect(state.error.value).toBe('fork unavailable')
+  })
+
+  it('handles editing the first message and refuses edits during an active turn', async () => {
+    const active = await setup(true)
+    expect(await active.editSelectedMessage('t0')).toBe('')
+    expect(gatewayMocks.forkThread).not.toHaveBeenCalled()
+    const state = await setup()
+    expect(await state.editSelectedMessage('t0')).toBe('edited')
+    state.primeSelectedThread('edited')
+    expect(gatewayMocks.rollbackThread).not.toHaveBeenCalled()
+    expect(gatewayMocks.startThread).toHaveBeenCalledWith('/tmp/project', 'gpt-5.5', 'codex')
+    expect(state.messages.value).toEqual([])
+  })
+
+  it('rejects a fork that ignores the turn boundary and fails closed on storage errors', async () => {
+    const state = await setup()
+    gatewayMocks.forkThread.mockResolvedValueOnce({ threadId: 'edited', cwd: '/tmp/project', model: 'gpt-5.5', messages: original, turnCount: 3 })
+    expect(await state.editSelectedMessage('t1')).toBe('')
+    expect(state.error.value).toBe('Codex did not fork at the selected message')
+    expect(gatewayMocks.persistMessageBranch).not.toHaveBeenCalled()
+    expect(gatewayMocks.archiveThread).toHaveBeenCalledWith('edited')
+    gatewayMocks.persistMessageBranch.mockRejectedValueOnce(new Error('branch storage unavailable'))
+    expect(await state.editSelectedMessage('t1')).toBe('')
+    expect(state.selectedThreadId.value).toBe('original')
+    expect(state.messages.value).toEqual(original)
+    expect(state.error.value).toBe('branch storage unavailable')
+    expect(gatewayMocks.startThreadTurn).not.toHaveBeenCalled()
+    expect(gatewayMocks.rollbackThread).not.toHaveBeenCalled()
+  })
+
+  it('loads one preceding turn when editing at a history page boundary', async () => {
+    const state = await setup()
+    gatewayMocks.getThreadDetail.mockResolvedValue({ messages: original.slice(2), inProgress: false, model: 'gpt-5.5', modelProvider: 'openai', turnIndexByTurnId: { t1: 1, t2: 2 } })
+    await state.loadMessages('original', { force: true })
+    gatewayMocks.getOlderThreadMessages.mockResolvedValue({ messages: [], turnIndexByTurnId: { t0: 0 } })
+    expect(await state.editSelectedMessage('t1')).toBe('edited')
+    expect(gatewayMocks.getOlderThreadMessages).toHaveBeenCalledWith('original', 't1', 1)
+    expect(gatewayMocks.forkThread).toHaveBeenCalledWith('original', { lastTurnId: 't0' })
+  })
+
+  it('does not navigate away from another thread opened during editing', async () => {
+    const state = await setup()
+    let finish!: (fork: unknown) => void
+    gatewayMocks.forkThread.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    const editing = state.editSelectedMessage('t1')
+    await vi.waitFor(() => expect(gatewayMocks.forkThread).toHaveBeenCalled())
+    state.primeSelectedThread('another-thread')
+    finish({ threadId: 'edited', cwd: '/tmp/project', model: 'gpt-5.5', messages: original.slice(0, 2), turnCount: 1 })
+    await editing
+    expect(state.selectedThreadId.value).toBe('another-thread')
   })
 })

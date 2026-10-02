@@ -1,3 +1,4 @@
+import { isMessageBranch, readMessageBranches, saveMessageBranch } from './messageBranches'
 import { mergeSessionFileChanges, readSessionFileChanges } from './sessionFileChanges'
 import { turnDiffItem } from '../shared/turnDiff'
 import { normalizePermissionMode, permissionModeParams, type PermissionMode } from '../shared/permissionMode'
@@ -8529,6 +8530,22 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         const data = await readProviderBackedModelIds(appServer)
         setJson(res, 200, data)
         return
+      }
+
+      if (url.pathname === '/codex-api/message-branches') {
+        if (req.method === 'GET') {
+          setJson(res, 200, { data: await readMessageBranches(getCodexHomeDir()) })
+          return
+        }
+        if (req.method === 'POST') {
+          const branch = await readJsonBody(req)
+          if (!isMessageBranch(branch)) {
+            setJson(res, 400, { error: 'Invalid message branch' })
+            return
+          }
+          setJson(res, 200, { data: await saveMessageBranch(getCodexHomeDir(), branch) })
+          return
+        }
       }
 
       if (req.method === 'GET' && url.pathname === '/codex-api/workspace-roots-state') {

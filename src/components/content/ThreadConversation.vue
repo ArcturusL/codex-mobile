@@ -729,14 +729,22 @@
               <div
                 v-if="showCopyResponseButton(message) || showEditMessageButton(message)"
                 class="message-toolbar"
+                :class="{ 'has-branches': message.role === 'user' && branchControlByTurn[message.turnIndex ?? -1] }"
                 :data-role="message.role"
               >
+                <MessageBranchSwitcher
+                  v-if="message.role === 'user' && branchControlByTurn[message.turnIndex ?? -1]"
+                  :control="branchControlByTurn[message.turnIndex ?? -1]!"
+                  :disabled="isEditingMessage"
+                  @select="emit('selectMessageBranch', $event)"
+                />
                 <button
                   v-if="showEditMessageButton(message)"
                   type="button"
                   class="message-edit-button"
                   aria-label="Edit this message"
                   title="Edit this message"
+                  :disabled="isEditingMessage || isTurnInProgress"
                   @click="editMessage(message.id)"
                 >
                   <IconTablerFilePencil class="icon-svg message-edit-icon" />
@@ -792,6 +800,12 @@
       </li>
       <li ref="bottomAnchorRef" class="conversation-bottom-anchor" />
     </ul>
+    <p v-if="editError" class="my-2 rounded-lg border border-rose-500/30 px-3 py-2 text-sm text-rose-500" role="alert">{{ editError }}</p>
+    <div v-if="pendingBranchControls.length" class="pending-message-branches">
+      <span>Editing message</span>
+      <MessageBranchSwitcher v-for="control in pendingBranchControls" :key="control.turnIndex"
+        :control="control" :disabled="isEditingMessage" @select="emit('selectMessageBranch', $event)" />
+    </div>
 
     <button
       v-if="showJumpToLatestButton"
@@ -914,6 +928,8 @@
 </template>
 
 <script setup lang="ts">
+import MessageBranchSwitcher from './MessageBranchSwitcher.vue'
+import type { MessageBranchControl } from '../../shared/messageBranches'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { readDisplayMathBlock, renderMathToHtml, splitMathSegments } from './markdownMath'
 import 'katex/dist/katex.min.css'
@@ -1336,12 +1352,23 @@ const props = defineProps<{
   cwd: string
   hasMorePersistedAbove?: boolean
   isLoadingPersistedAbove?: boolean
+  messageBranches?: MessageBranchControl[]
+  editError?: string
+  isEditingMessage?: boolean
+  isTurnInProgress?: boolean
   loadEarlierMessages?: (threadId: string) => Promise<void>
 }>()
 
+const branchControlByTurn = computed(() => Object.fromEntries((props.messageBranches ?? []).map((control) => [control.turnIndex, control])))
+const pendingBranchControls = computed(() => {
+  const latestUserTurn = props.messages.reduce((max, message) => message.role === 'user' ? Math.max(max, message.turnIndex ?? -1) : max, -1)
+  return (props.messageBranches ?? []).filter((control) => control.turnIndex > latestUserTurn)
+})
+
 const emit = defineEmits<{
   forkThread: [payload: { threadId: string; turnIndex: number }]
-  rollback: [payload: { turnId: string }]
+  editMessage: [payload: { turnId: string }]
+  selectMessageBranch: [threadId: string]
   implementPlan: [payload: { turnId: string }]
   respondServerRequest: [payload: { id: number; result?: unknown; error?: { code?: number; message: string } }]
 }>()
@@ -2419,7 +2446,7 @@ const editableTurnIdByMessageId = computed<Record<string, string>>(() => {
   for (const message of props.messages) {
     if (message.role !== 'user' || typeof message.turnIndex !== 'number') continue
     const turnId = typeof message.turnId === 'string' && message.turnId.length > 0 ? message.turnId : ''
-    if (!turnId || message.text.trim().length === 0) continue
+    if (!turnId || (!message.text.trim() && !message.images?.length && !message.fileAttachments?.length && !message.skills?.length)) continue
     next[message.id] = turnId
   }
   return next
@@ -2432,7 +2459,7 @@ function showEditMessageButton(message: UiMessage): boolean {
 function editMessage(messageId: string): void {
   const turnId = editableTurnIdByMessageId.value[messageId]
   if (!turnId) return
-  emit('rollback', { turnId })
+  emit('editMessage', { turnId })
 }
 
 function splitPlainTextByLinks(
@@ -4768,8 +4795,19 @@ onBeforeUnmount(() => {
   @apply mt-1 self-start flex items-center gap-1 opacity-[0.01] transition-opacity duration-200;
 }
 
+.message-toolbar.has-branches,
+.message-toolbar:focus-within,
 .message-row:hover .message-toolbar {
   @apply opacity-100;
+}
+
+.pending-message-branches {
+  @apply flex items-center justify-end gap-2 py-2 text-xs text-slate-500;
+}
+
+.message-edit-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .message-copy-button {

@@ -1,3 +1,4 @@
+import type { MessageBranch } from '../shared/messageBranches'
 import { normalizePermissionMode, permissionModeParams, type PermissionMode } from '../shared/permissionMode'
 import {
   fetchRpcMethodCatalog,
@@ -1649,13 +1650,14 @@ export type StartedThread = {
 }
 
 export type ForkedThread = {
+  turnCount: number
   threadId: string
   cwd: string
   model: string
   messages: UiMessage[]
 }
 
-export async function startThread(cwd?: string, model?: string): Promise<StartedThread> {
+export async function startThread(cwd?: string, model?: string, modelProvider?: string): Promise<StartedThread> {
   try {
     const params: Record<string, unknown> = {}
     if (typeof cwd === 'string' && cwd.trim().length > 0) {
@@ -1664,6 +1666,7 @@ export async function startThread(cwd?: string, model?: string): Promise<Started
     if (typeof model === 'string' && model.trim().length > 0) {
       params.model = model.trim()
     }
+    if (modelProvider) params.modelProvider = modelProvider === 'codex' ? 'openai' : modelProvider
     const payload = await callRpc<ThreadStartResponse>('thread/start', params)
     const threadId = normalizeThreadIdFromPayload(payload)
     if (!threadId) {
@@ -1680,17 +1683,19 @@ export async function startThread(cwd?: string, model?: string): Promise<Started
 }
 
 export async function forkThread(threadId: string): Promise<ForkedThread>
+export async function forkThread(threadId: string, options: { lastTurnId: string }): Promise<ForkedThread>
 export async function forkThread(threadId: string, cwd: string | undefined, model: string | undefined): Promise<StartedThread>
 export async function forkThread(
   threadId: string,
-  cwd?: string,
+  cwd?: string | { lastTurnId: string },
   model?: string,
 ): Promise<StartedThread | ForkedThread> {
-  if (arguments.length <= 1) {
+  if (arguments.length <= 1 || typeof cwd === 'object') {
     try {
       const payload = await callRpc<ThreadForkResponse & ThreadReadResponse & { thread?: { id?: string; cwd?: string } }>('thread/fork', {
         threadId,
         persistExtendedHistory: true,
+        ...(typeof cwd === 'object' ? { lastTurnId: cwd.lastTurnId } : {}),
       })
       const forkedThreadId = normalizeThreadIdFromPayload(payload)
       if (!forkedThreadId) {
@@ -1701,6 +1706,7 @@ export async function forkThread(
         cwd: normalizeThreadCwdFromPayload(payload),
         model: normalizeThreadModelFromPayload(payload),
         messages: normalizeThreadMessagesV2(payload, readThreadTurnStartIndex(payload)),
+        turnCount: readThreadTurnStartIndex(payload) + (payload.thread?.turns?.length ?? 0),
       }
     } catch (error) {
       throw normalizeCodexApiError(error, `Failed to fork thread ${threadId}`, 'thread/fork')
@@ -3575,4 +3581,20 @@ export async function uploadFile(file: File): Promise<string | null> {
   } finally {
     clearTimeout(timeoutId)
   }
+}
+
+export async function getMessageBranches(): Promise<MessageBranch[]> {
+  const response = await fetch('/codex-api/message-branches')
+  if (!response.ok) throw new Error('Failed to load message branches')
+  return (await response.json()).data
+}
+
+export async function persistMessageBranch(branch: MessageBranch): Promise<MessageBranch[]> {
+  const response = await fetch('/codex-api/message-branches', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(branch),
+  })
+  if (!response.ok) throw new Error('Failed to save message branch')
+  return (await response.json()).data
 }
