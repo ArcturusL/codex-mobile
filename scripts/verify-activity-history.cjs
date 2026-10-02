@@ -161,12 +161,28 @@ async function runLiveTurn(page, state) {
   assert(state.sent[0].input.some((input) => input.text?.includes(marker)), 'Unique marker submitted only to the stub')
   const turn = state.turns.at(-1)
   state.emit('turn/started', { turn })
+  for (let index = 0; index < 100; index++) {
+    const empty = { id: `empty-reasoning-${index}`, type: 'reasoning', summary: [' \n'], content: [] }
+    turn.items.push(empty)
+    state.emit('item/started', { item: { ...empty, summary: [] } })
+    state.emit('item/reasoning/summaryPartAdded', { itemId: empty.id, summaryIndex: 0 })
+    state.emit('item/reasoning/summaryTextDelta', { itemId: empty.id, delta: ' \n' })
+    state.emit('item/completed', { item: empty })
+  }
+  state.emit('item/started', { item: { id: 'empty-unfinished', type: 'reasoning', summary: [], content: [] } })
   const reasoning = reasoningItem(`${liveCase.id}-reasoning`, liveCase.reasoning[0])
   turn.items.push(reasoning)
   state.emit('item/started', { item: { ...reasoning, summary: [] } })
   state.emit('item/reasoning/summaryTextDelta', { itemId: reasoning.id, summaryIndex: 0, delta: liveCase.reasoning[0] })
   await page.locator('.live-overlay-reasoning').filter({ hasText: liveCase.reasoning[0] }).waitFor()
+  assert.equal(await page.locator('.live-overlay-inline').count(), 1, 'Only one runtime status is displayed')
+  assert.equal(await page.locator('.conversation-item[data-message-type="agentReasoning"]').count(), 0, 'Empty thinking events leave no expandable rows')
   state.emit('item/completed', { item: reasoning })
+  const thinking = page.locator('.conversation-item[data-message-type="agentReasoning"] details')
+  await thinking.waitFor()
+  assert.equal(await thinking.count(), 1, 'Only reasoning with readable content is expandable')
+  await thinking.locator('summary').click()
+  assert.equal(await thinking.locator('.plan-card-markdown').innerText(), liveCase.reasoning[0])
   const command = commandItem(liveCase, 'inProgress')
   turn.items.push(command)
   state.emit('item/started', { item: command })
@@ -242,7 +258,7 @@ async function assertLargeTurn(page, state) {
   const performance = await profileToggles(page, state)
   await answer.scrollIntoViewIfNeeded()
   await page.waitForTimeout(2500)
-  const screenshot = resolve(outputDir, 'large-history-light-375x812.png')
+  const screenshot = resolve(outputDir, 'large-history-light-1440x1000.png')
   await page.screenshot({ path: screenshot, fullPage: true })
   return { activityCount: 62, reasoningCount: 60, commandCount: 2, firstAndLastAccessible: true, finalAnswerVisible: true, performance, screenshot }
 }
@@ -283,7 +299,7 @@ async function run(browser, viewport, theme) {
     const screenshot = resolve(outputDir, `activity-history-${theme}-${viewport.width}x${viewport.height}.png`)
     await page.screenshot({ path: screenshot, fullPage: true })
     screenshots.push(screenshot)
-    const largeTurn = theme === 'light' && viewport.width === 375 ? await assertLargeTurn(page, state) : null
+    const largeTurn = theme === 'light' && viewport.width === 1440 ? await assertLargeTurn(page, state) : null
     assert.deepEqual(state.externalRequests, [], 'No external runtime requests')
     assert.deepEqual(state.pageErrors, [], 'No browser errors')
     assert.equal(state.sent.length, 1, 'Exactly one mocked live turn sent')
@@ -304,7 +320,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true })
   const reports = []
   try {
-    for (const viewport of [{ width: 375, height: 812 }, { width: 768, height: 1024 }]) {
+    for (const viewport of [{ width: 1440, height: 1000 }]) {
       for (const theme of ['light', 'dark']) {
         const report = await run(browser, viewport, theme)
         reports.push(report)

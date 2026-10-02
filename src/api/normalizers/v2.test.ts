@@ -62,6 +62,7 @@ describe('normalizeThreadMessagesV2', () => {
     const messages = normalizeThreadMessagesV2(threadReadResponseWithContent([
       { id: 'content-only', type: 'reasoning', summary: [], content: ['Available content'] },
       { id: 'empty', type: 'reasoning', summary: [], content: [] },
+      { id: 'whitespace', type: 'reasoning', summary: [' \n'], content: ['\t'] },
     ]))
 
     expect(messages.map((message) => [message.id, message.text])).toEqual([

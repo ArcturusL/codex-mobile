@@ -714,9 +714,24 @@ describe('conversation activity history', () => {
       method, params: { threadId, turnId: 'turn-1', ...params },
     })
 
+    // Long turns can contain many reasoning items without any readable content.
+    for (let index = 0; index < 100; index += 1) {
+      const id = `empty-reasoning-${index}`
+      emit('item/started', { item: { id, type: 'reasoning', summary: [], content: [] } })
+      emit('item/reasoning/summaryPartAdded', { itemId: id, summaryIndex: 0 })
+      emit('item/reasoning/summaryTextDelta', { itemId: id, delta: ' \n' })
+      emit('item/completed', { item: { id, type: 'reasoning', summary: [' \n'], content: [] } })
+    }
+    expect(state.messages.value).toEqual(earlierMessages)
+    expect(state.selectedLiveOverlay.value).toMatchObject({ activityLabel: 'Thinking', reasoningText: '' })
+    // A turn can also finish without an item/completed notification.
+    emit('item/started', { item: { id: 'empty-unfinished', type: 'reasoning' } })
     emit('item/started', { item: { id: 'reasoning-1', type: 'reasoning' } })
     emit('item/reasoning/summaryTextDelta', { itemId: 'reasoning-1', delta: 'Inspect ' })
     emit('item/reasoning/summaryTextDelta', { itemId: 'reasoning-1', delta: 'files' })
+    // Replayed starts must not erase already streamed text.
+    emit('item/started', { item: { id: 'reasoning-1', type: 'reasoning' } })
+    expect(state.messages.value.find((message) => message.id === 'reasoning-1')?.text).toBe('Inspect files')
     emit('item/completed', { item: { id: 'reasoning-1', type: 'reasoning', summary: ['Inspect files'], content: ['Unused content'] } })
     emit('item/started', { item: { id: 'command-1', type: 'commandExecution', command: 'pwd', cwd: '/tmp/project' } })
     emit('item/commandExecution/outputDelta', { itemId: 'command-1', delta: '/tmp/project\n' })
@@ -732,6 +747,7 @@ describe('conversation activity history', () => {
     })
 
     const activityIds = ['reasoning-1', 'command-1', 'reasoning-2']
+    expect(state.messages.value.some((message) => message.id.startsWith('empty-'))).toBe(false)
     expect(state.messages.value.filter((message) => activityIds.includes(message.id)).map((message) => message.id))
       .toEqual(activityIds)
     expect(state.messages.value.find((message) => message.id === 'reasoning-2')).toMatchObject({

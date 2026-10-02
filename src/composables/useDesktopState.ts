@@ -3743,6 +3743,8 @@ export function useDesktopState() {
   }
 
   function upsertLiveActivity(threadId: string, msg: UiMessage): void {
+    // Match history normalization: empty reasoning is runtime status, not an activity row.
+    if ((msg.messageType === 'agentReasoning' || msg.messageType === 'agentReasoning.live') && !msg.text.trim()) return
     const previous = liveActivitiesByThreadId.value[threadId] ?? []
     const current = previous.find((message) => message.id === msg.id)
     const turnId = msg.turnId || current?.turnId || activeTurnIdByThreadId.value[threadId]
