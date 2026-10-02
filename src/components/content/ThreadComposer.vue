@@ -155,6 +155,7 @@
           @input="onInputChange"
           @keydown="onInputKeydown"
           @keyup="onInputKeyup"
+          @blur="pasteAsPlainText = false"
           @click="updateInlineMenuState"
           @paste="onInputPaste"
         />
@@ -639,6 +640,7 @@ let fileMentionDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let isHoldPressActive = false
 let dragDepth = 0
 let attachmentSessionToken = 0
+let pasteAsPlainText = false
 const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
 const DRAFT_STORAGE_PREFIX = 'codex-web-local.thread-draft.v1.'
 let lastActiveThreadId = ''
@@ -1462,13 +1464,14 @@ async function attachImageFile(file: File, sessionToken: number): Promise<void> 
   }
 }
 
-async function attachUploadedFile(file: File, sessionToken: number): Promise<void> {
+async function attachUploadedFile(file: File, sessionToken: number, onFailure?: () => void): Promise<void> {
   if (!beginAttachmentWork(sessionToken)) return
   try {
     const serverPath = await uploadFile(file)
     if (sessionToken !== attachmentSessionToken) return
     if (!serverPath) {
       recordAttachmentBatchResult('failure')
+      onFailure?.()
       return
     }
     addFileAttachment(serverPath)
@@ -1476,6 +1479,7 @@ async function attachUploadedFile(file: File, sessionToken: number): Promise<voi
   } catch {
     if (sessionToken === attachmentSessionToken) {
       recordAttachmentBatchResult('failure')
+      onFailure?.()
     }
   } finally {
     finishAttachmentWork(sessionToken)
@@ -1622,13 +1626,38 @@ function onWindowDragCleanup(): void {
 function onInputPaste(event: ClipboardEvent): void {
   if (isInteractionDisabled.value) return
   const plainText = event.clipboardData?.getData('text/plain') ?? ''
+  if (pasteAsPlainText) {
+    pasteAsPlainText = false
+    // The textarea's native paste inserts plain text and preserves undo.
+    return
+  }
   if (plainText.length >= PASTED_TEXT_FILE_THRESHOLD) {
     event.preventDefault()
     const textFile = new File([plainText], createPastedTextFileName(), {
       type: 'text/plain',
       lastModified: Date.now(),
     })
-    attachIncomingFiles([textFile])
+    const input = inputRef.value
+    const originalDraft = draft.value
+    const start = input?.selectionStart ?? originalDraft.length
+    const end = input?.selectionEnd ?? start
+    beginAttachmentBatch(1)
+    isAttachMenuOpen.value = false
+    closeFileMention()
+    void attachUploadedFile(textFile, attachmentSessionToken, () => {
+      // Preserve edits made while uploading; only replace the original selection
+      // if the draft has not changed.
+      const unchanged = draft.value === originalDraft
+      const insertAt = unchanged ? start : draft.value.length
+      const replaceTo = unchanged ? end : insertAt
+      draft.value = draft.value.slice(0, insertAt) + plainText + draft.value.slice(replaceTo)
+      onInputChange()
+      void nextTick(() => {
+        if (input && input === inputRef.value && document.activeElement === input) {
+          input.setSelectionRange(insertAt + plainText.length, insertAt + plainText.length)
+        }
+      })
+    })
     return
   }
   const items = Array.from(event.clipboardData?.items ?? [])
@@ -1654,6 +1683,7 @@ function onInputChange(): void {
 }
 
 function onInputKeydown(event: KeyboardEvent): void {
+  pasteAsPlainText = (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'v'
   if (isFileMentionOpen.value || isSlashMenuOpen.value) {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -1707,6 +1737,7 @@ function onInputKeydown(event: KeyboardEvent): void {
 }
 
 function onInputKeyup(event: KeyboardEvent): void {
+  pasteAsPlainText = false
   if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) updateInlineMenuState()
 }
 
