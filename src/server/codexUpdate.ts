@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
@@ -94,25 +94,31 @@ export function createCodexUpdater() {
   async function install(): Promise<void> {
     let staging: string | undefined
     try {
-      const version = status.latestVersion!
       const root = getManagedCodexRoot()
       await mkdir(root, { recursive: true, mode: 0o700 })
       staging = await mkdtemp(join(root, 'install-'))
       const invocation = getSpawnInvocation('npm', [
         'install', '--prefix', staging, '--registry', REGISTRY, '--ignore-scripts',
-        '--no-audit', '--no-fund', '--include=optional', '--package-lock=false', '--save-exact', `@openai/codex@${version}`,
+        '--no-audit', '--no-fund', '--include=optional', '--package-lock=false', '--save-exact', '--prefer-online', '@openai/codex@latest',
       ])
       const { stdout, stderr } = await exec(invocation.command, invocation.args, { timeout: 300_000, maxBuffer: 1024 * 1024, windowsHide: true })
       // npm can exit successfully after dropping an optional platform binary on ENOSPC.
       if (/ENOSPC|no space left on device/i.test(stdout + stderr)) throw new Error(stderr + '\n' + stdout)
-      const installedCommand = join(staging, 'node_modules', '@openai', 'codex', 'bin', 'codex.js')
-      if (await readVersion(installedCommand) !== version) throw new Error('Installed Codex version did not match. The previous version is unchanged.')
+      const packageDir = join(staging, 'node_modules', '@openai', 'codex')
+      const { version } = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8'))
+      // latest may advance after the last check; validate against the installed package, not that cached version.
+      if (typeof version !== 'string' || !STABLE_VERSION.test(version)
+        || await readVersion(join(packageDir, 'bin', 'codex.js')) !== version
+        || (status.currentVersion && version !== status.currentVersion && !isNewerCodexVersion(version, status.currentVersion))) {
+        throw new Error('Installed Codex version did not match. The previous version is unchanged.')
+      }
       // Activate only after validation; keep the previous installation for rollback.
       const pending = join(root, 'current.json.tmp')
       await writeFile(pending, JSON.stringify({ directory: basename(staging) }), { mode: 0o600 })
       await rename(pending, join(root, 'current.json'))
       staging = undefined
       status.currentVersion = version
+      status.latestVersion = version
       status.updateAvailable = false
       status.restartRequired = true
     } catch (error) {

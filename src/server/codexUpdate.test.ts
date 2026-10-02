@@ -31,11 +31,13 @@ fs.appendFileSync(path.join(root, 'installs'), '1');
 const mode = fs.readFileSync(path.join(root, 'mode'), 'utf8');
 if (mode === 'fail') process.exit(1);
 if (mode === 'disk-full') { console.error('npm warn tar TAR_ENTRY_ERROR ENOSPC: no space left on device, write'); process.exit(0); }
-if (!process.argv.includes('@openai/codex@0.154.0') || !process.argv.includes('--ignore-scripts')) process.exit(2);
+if (!process.argv.includes('@openai/codex@latest') || !process.argv.includes('--prefer-online') || !process.argv.includes('--ignore-scripts')) process.exit(2);
 const prefix = process.argv[process.argv.indexOf('--prefix') + 1];
 const target = path.join(prefix, 'node_modules/@openai/codex/bin');
 fs.mkdirSync(target, { recursive: true });
-fs.writeFileSync(path.join(target, 'codex.js'), "console.log('codex-cli " + (mode === 'mismatch' ? '0.100.0' : '0.154.0') + "')");
+const version = mode === 'downgrade' ? '0.152.0' : '0.155.0';
+fs.writeFileSync(path.join(target, '..', 'package.json'), JSON.stringify({ name: '@openai/codex', version }));
+fs.writeFileSync(path.join(target, 'codex.js'), "console.log('codex-cli " + (mode === 'mismatch' ? '0.100.0' : version) + "')");
 `, { mode: 0o755 })
   process.env.CODEX_HOME = root
   process.env.CODEXUI_CODEX_COMMAND = join(root, 'codex.cjs')
@@ -95,20 +97,24 @@ fs.writeFileSync(path.join(target, 'codex.js'), "console.log('codex-cli " + (mod
     expect((await update()).status).toBe(202)
     expect((await settled()).error).toMatch('did not match')
     expect(resolveCodexCommand()).toBe(join(root, 'codex.cjs'))
+    await writeFile(join(root, 'mode'), 'downgrade')
+    expect((await update()).status).toBe(202)
+    expect((await settled()).error).toMatch('did not match')
+    expect(getManagedCodexCommand()).toBeNull()
     await writeFile(join(root, 'mode'), 'success')
     await Promise.all(Array.from({ length: 8 }, () => update()))
     const complete = await settled()
-    expect(complete).toMatchObject({ currentVersion: '0.154.0', updating: false, updateAvailable: false, restartRequired: true, error: null })
-    expect(await readFile(join(root, 'installs'), 'utf8')).toBe('1111')
+    expect(complete).toMatchObject({ currentVersion: '0.155.0', latestVersion: '0.155.0', updating: false, updateAvailable: false, restartRequired: true, error: null })
+    expect(await readFile(join(root, 'installs'), 'utf8')).toBe('11111')
     expect(resolveCodexCommand()).toBe(getManagedCodexCommand())
     updater.dispose()
     updater = createCodexUpdater()
-    expect(await (await get()).json()).toMatchObject({ currentVersion: '0.154.0', restartRequired: false })
+    expect(await (await get()).json()).toMatchObject({ currentVersion: '0.155.0', restartRequired: false })
     expect((await update()).status).toBe(409)
     registry.mockRejectedValueOnce(new Error('registry offline'))
     updater.dispose()
     updater = createCodexUpdater()
-    expect(await (await get()).json()).toMatchObject({ currentVersion: '0.154.0', latestVersion: null, error: 'registry offline' })
+    expect(await (await get()).json()).toMatchObject({ currentVersion: '0.155.0', latestVersion: null, error: 'registry offline' })
   } finally {
     updater.dispose()
     server.closeAllConnections()

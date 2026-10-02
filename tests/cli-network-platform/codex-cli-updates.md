@@ -30,3 +30,13 @@ Setup: isolated candidate with a simulated failed updater response in each theme
 - Open Settings after a failed update. The error is selectable despite the sidebar's `select-none`; long details wrap and scroll inside the error block. A previous restart notice must not label the failed attempt successful.
 - Click Copy error: clipboard must contain the translated summary and complete displayed diagnostic details, including line breaks. Deny clipboard access and the fallback: show manual-copy guidance while keeping the original error selectable. Validate both light and dark themes.
 - Cleanup: remove browser response stubs. No new background requests are introduced; error formatting happens only on failure and details are bounded to 16,000 characters plus a truncation marker.
+
+
+## Latest install target and stable update progress
+
+Setup: an isolated candidate server on a free localhost port. Run `npm exec vitest run src/server/codexUpdate.test.ts` for the backend and `VERIFY_BASE_URL=http://127.0.0.1:4198 node scripts/verify-codex-update-settings.cjs` for the browser. The browser check stubs only the updater endpoint and never installs a production package.
+
+- The installer must request `@openai/codex@latest` with `--prefer-online`. Let the cached version check return 0.154.0 while npm resolves latest to 0.155.0: activation must succeed and both installed/latest labels must become 0.155.0. Compare the executable's version against its downloaded package metadata, not the cached version check. Reject mismatched binaries and downgrades before changing `current.json`.
+- Delay the update POST and several progress GETs. From the initial click through completion, keep Update now labelled Updating and disabled. Keep the separate Check for updates button labelled Check for updates and disabled. Silent progress polls must never change it to Checking; an explicit manual check still must.
+- Fail one progress GET, then recover. Keep the ongoing update indicator while showing the request error. Close/reopen Settings to recover the job, then verify successful completion and failed-install retry states. Run in light and dark themes.
+- Performance: retain the existing sequential poll schedule (1.5 seconds while updating, 60 seconds otherwise), one in-flight request per mounted panel, and the backend's single-install guard. No extra registry lookup is added to the install path; only one asynchronous package-manifest read is added. Cleanup: remove stubs/close the test pages; stop only the isolated candidate when finished.

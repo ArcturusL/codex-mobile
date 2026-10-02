@@ -18,14 +18,14 @@
       </div>
     </div>
     <div class="codex-update-actions">
-      <button type="button" :disabled="busy || status?.updating || status?.checking" @click="request('check')">
-        {{ busy || status?.checking ? t('Checking…') : t('Check for updates') }}
+      <button type="button" :disabled="pendingAction !== null || isUpdating || isChecking" @click="request('check')">
+        {{ isChecking ? t('Checking…') : t('Check for updates') }}
       </button>
-      <button type="button" :disabled="busy || !status?.updateAvailable || status?.updating || status?.checking" @click="request('update')">
-        {{ status?.updating ? t('Updating…') : t('Update now') }}
+      <button type="button" :disabled="pendingAction !== null || !status?.updateAvailable || isUpdating || isChecking" @click="request('update')">
+        {{ isUpdating ? t('Updating…') : t('Update now') }}
       </button>
     </div>
-    <p v-if="status?.updating" role="status">{{ t('Downloading and verifying Codex. You can close settings.') }}</p>
+    <p v-if="isUpdating" role="status">{{ t('Downloading and verifying Codex. You can close settings.') }}</p>
   </section>
 </template>
 
@@ -37,7 +37,11 @@ import { copyTextToClipboard } from '../../utils/clipboard'
 
 const { t } = useUiLanguage()
 const status = ref<CodexUpdateStatus | null>(null)
-const busy = ref(false)
+const pendingAction = ref<'status' | 'check' | 'update' | null>(null)
+const isUpdating = computed(() => pendingAction.value === 'update' || Boolean(status.value?.updating))
+const isChecking = computed(() => !isUpdating.value && (
+  pendingAction.value === 'check' || status.value?.checking || (!status.value && pendingAction.value === 'status')
+))
 const error = ref('')
 const errorMessage = computed(() => t(error.value || status.value?.error || ''))
 const errorText = computed(() => [errorMessage.value, !error.value && status.value?.errorDetails].filter(Boolean).join('\n\n'))
@@ -55,9 +59,9 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 
 async function request(action: 'status' | 'check' | 'update' = 'status') {
-  if (busy.value) return
+  if (pendingAction.value !== null) return
   clearTimeout(timer)
-  busy.value = true
+  pendingAction.value = action
   error.value = ''
   try {
     const response = await fetch(`/codex-api/cli-update${action === 'check' ? '?check=1' : ''}`, {
@@ -71,7 +75,7 @@ async function request(action: 'status' | 'check' | 'update' = 'status') {
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Could not load Codex update status.'
   } finally {
-    busy.value = false
+    pendingAction.value = null
     if (!disposed) timer = setTimeout(() => { void request() }, status.value?.updating ? 1500 : 60_000)
   }
 }
