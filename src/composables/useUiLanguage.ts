@@ -86,6 +86,7 @@ const zhCN: Record<string, string> = {
   'No Codex update is available.': '当前没有可用的 Codex 更新。',
   'Toggle terminal': '切换终端',
   'Open terminal': '打开终端',
+  'Run command': '运行命令',
   'Terminal command': '终端命令',
   'No commands': '没有命令',
   'Search branches...': '搜索分支...',

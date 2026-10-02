@@ -499,15 +499,26 @@
             </span>
           </template>
           <template #actions>
+            <button
+              v-if="canShowTerminalToggle"
+              class="content-header-terminal-toggle"
+              type="button"
+              :class="{ 'is-open': isComposerTerminalOpen }"
+              :title="`${terminalToggleLabel} (${terminalShortcutLabel})`"
+              :aria-label="terminalToggleLabel"
+              :aria-pressed="isComposerTerminalOpen"
+              @click="toggleComposerTerminal"
+            >
+              <IconTablerTerminal aria-hidden="true" />
+              <span>{{ t('Terminal') }}</span>
+            </button>
             <ComposerDropdown
               v-if="canShowTerminalToggle"
               class="content-header-terminal-command"
               :class="{ 'is-open': isComposerTerminalOpen }"
               :model-value="terminalHeaderDropdownValue"
               :options="terminalHeaderDropdownOptions"
-              :placeholder="terminalCommandPlaceholder"
-              :selected-prefix-icon="IconTablerTerminal"
-              :icon-only="true"
+              :placeholder="t('Run command')"
               menu-align="end"
               :empty-label="t('No commands')"
               @update:model-value="onSelectHeaderTerminalCommand"
@@ -1171,7 +1182,6 @@ import {
   getHomeDirectory,
   getProjectRootSuggestion,
   getThreadTerminalQuickCommands,
-  getThreadTerminalStatus,
   getWorkspaceRootsState,
   importProjectZip,
   listLocalDirectories,
@@ -1469,7 +1479,6 @@ const threadComposerRef = ref<ThreadComposerExposed | null>(null)
 const homeTerminalPanelRef = ref<ThreadTerminalPanelExposed | null>(null)
 const threadTerminalPanelRef = ref<ThreadTerminalPanelExposed | null>(null)
 const homeTerminalOpen = ref(false)
-const isThreadTerminalAvailable = ref(true)
 const terminalProjectQuickCommands = ref<ThreadTerminalQuickCommand[]>([])
 const terminalStoredQuickCommands = ref<TerminalHeaderQuickCommand[]>(loadTerminalStoredQuickCommands())
 const terminalHeaderDropdownValue = ref('')
@@ -1718,9 +1727,8 @@ const composerCwd = computed(() => {
   return selectedThread.value?.cwd?.trim() ?? ''
 })
 const canShowTerminalToggle = computed(() => (
-  isThreadTerminalAvailable.value && (
-    (isHomeRoute.value && composerCwd.value.length > 0) ||
-    (route.name === 'thread' && selectedThreadId.value.length > 0)
+  composerCwd.value.length > 0 && (
+    isHomeRoute.value || (route.name === 'thread' && selectedThreadId.value.length > 0)
   )
 ))
 const canShowContentHeaderBranchDropdown = computed(() => (
@@ -2005,8 +2013,8 @@ const terminalShortcutLabel = computed(() => {
   }
   return 'Ctrl+J'
 })
-const terminalCommandPlaceholder = computed(() => (
-  isComposerTerminalOpen.value ? t('Terminal') : t('Open terminal')
+const terminalToggleLabel = computed(() => (
+  isComposerTerminalOpen.value ? t('Hide terminal') : t('Open terminal')
 ))
 const terminalHeaderQuickCommands = computed<TerminalHeaderQuickCommand[]>(() => {
   const storedByValue = new Map(terminalStoredQuickCommands.value.map((command) => [command.value, command]))
@@ -2048,7 +2056,6 @@ onMounted(() => {
   void loadWorkspaceRootOptionsState()
   void refreshDefaultProjectName()
   void loadFreeModeStatus()
-  void refreshThreadTerminalStatus()
   void refreshTerminalQuickCommands()
 })
 
@@ -2931,7 +2938,7 @@ function onWindowKeyDown(event: KeyboardEvent): void {
 }
 
 function toggleComposerTerminal(): void {
-  if (!isThreadTerminalAvailable.value) return
+  if (!canShowTerminalToggle.value) return
   if (isHomeRoute.value) {
     if (!composerCwd.value) return
     homeTerminalOpen.value = !homeTerminalOpen.value
@@ -2951,7 +2958,7 @@ function onSelectHeaderTerminalCommand(command: string): void {
 }
 
 async function openTerminalAndRunCommand(command: string): Promise<void> {
-  if (!isThreadTerminalAvailable.value || !composerCwd.value) return
+  if (!canShowTerminalToggle.value) return
   if (isHomeRoute.value) {
     homeTerminalOpen.value = true
   } else if (selectedThreadId.value) {
@@ -3091,22 +3098,6 @@ function onHideHomeTerminal(): void {
 function onHideSelectedThreadTerminal(): void {
   if (selectedThreadId.value) {
     setThreadTerminalOpen(selectedThreadId.value, false)
-  }
-}
-
-async function refreshThreadTerminalStatus(): Promise<void> {
-  try {
-    const status = await getThreadTerminalStatus()
-    isThreadTerminalAvailable.value = status.available
-    if (!status.available) {
-      homeTerminalOpen.value = false
-      if (selectedThreadId.value) {
-        setThreadTerminalOpen(selectedThreadId.value, false)
-      }
-    }
-  } catch {
-    isThreadTerminalAvailable.value = false
-    homeTerminalOpen.value = false
   }
 }
 
@@ -4828,6 +4819,18 @@ async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
 
 .content-header-terminal-command {
   @apply max-w-48;
+}
+
+.content-header-terminal-toggle {
+  @apply inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 text-xs text-zinc-700 transition hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500;
+}
+
+.content-header-terminal-toggle svg {
+  @apply h-4 w-4;
+}
+
+.content-header-terminal-toggle.is-open {
+  @apply border-zinc-300 bg-zinc-100 text-zinc-950;
 }
 
 .content-header-terminal-command :deep(.composer-dropdown-trigger) {
