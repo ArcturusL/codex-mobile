@@ -61,3 +61,9 @@ The sidebar labels the grouped thread area as `Projects`, makes `Projects`, `Pin
 With the current frontend preview on `http://127.0.0.1:4173`, run `node scripts/check-sidebar-preferences.cjs`. Checks independent switches, reload persistence, restoring tabs, and the 60px margin; captures 1440×1000 light/dark screenshots under `output/playwright/`. This preview check does not validate backend or chat loading.
 
 Performance review: no new dependencies, API calls, polling, or list traversal; two preference reads at mount and one localStorage write per changed switch. Frontend typecheck/build passed.
+
+### Hidden chat groups do not reserve project space
+- Setup: one visible project and at least 19 projectless chat groups.
+- Actions: inspect the gap from the last project row to Chats; collapse/reopen the project, filter search, and reorder visible projects with hidden groups interspersed. Repeat in light/dark themes.
+- Expected: the rendered project container ends at its final visible project, and the actual section gap is 60px. Hidden groups reserve no height; drag order still uses the original full-list indices.
+- Cleanup: restore ordering and clear search.

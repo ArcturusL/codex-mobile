@@ -1461,22 +1461,16 @@ const projectedDropProjectIndex = computed<number | null>(() => {
 })
 
 const layoutProjectOrder = computed<string[]>(() => {
-  const sourceGroups = isSearchActive.value ? filteredGroups.value : props.groups
-  const names = sourceGroups.map((group) => group.projectName)
+  // Drag indices refer to the full list; filter only after applying that move.
+  const names = props.groups.map((group) => group.projectName)
   const drag = activeProjectDrag.value
   const projectedIndex = projectedDropProjectIndex.value
-
-  if (!drag || projectedIndex === null) {
-    return names
+  if (drag && projectedIndex !== null) {
+    const [movedProject] = names.splice(drag.fromIndex, 1)
+    if (movedProject) names.splice(projectedIndex, 0, movedProject)
   }
-
-  const next = [...names]
-  const [movedProject] = next.splice(drag.fromIndex, 1)
-  if (!movedProject) {
-    return names
-  }
-  next.splice(projectedIndex, 0, movedProject)
-  return next
+  const visibleNames = new Set(filteredGroups.value.map((group) => group.projectName))
+  return names.filter((name) => visibleNames.has(name))
 })
 
 const layoutTopByProject = computed<Record<string, number>>(() => {
@@ -1496,6 +1490,9 @@ const groupsContainerStyle = computed<Record<string, string>>(() => {
   for (const projectName of layoutProjectOrder.value) {
     totalHeight += getProjectOuterHeight(projectName)
   }
+
+  const lastProject = layoutProjectOrder.value.at(-1)
+  if (lastProject && !isCollapsed(lastProject)) totalHeight -= PROJECT_GROUP_EXPANDED_GAP_PX
 
   return {
     height: `${Math.max(0, totalHeight)}px`,
