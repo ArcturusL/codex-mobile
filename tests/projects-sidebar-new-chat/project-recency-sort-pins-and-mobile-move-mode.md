@@ -1,4 +1,6 @@
-### Feature: Project recency sort, pins, and mobile move mode
+### Historical coverage: Project recency sort, pins, and move mode
+
+This feature was reverted. It is not an active acceptance test; use the [sidebar revert coverage](../theme-layout-terminal/revert-pr-131-project-recency-and-mobile-move-mode.md) and [desktop interface checks](../theme-layout-terminal/desktop-interface-only.md).
 
 #### Prerequisites
 - App is running from this repository on `feature/project-recency-sort-upstream`.

@@ -402,7 +402,6 @@ import type {
   UiTokenUsageBreakdown,
 } from '../../types/codex'
 import { useDictation } from '../../composables/useDictation'
-import { useMobile } from '../../composables/useMobile'
 import { useUiLanguage } from '../../composables/useUiLanguage'
 import {
   createComposerPrompt,
@@ -565,7 +564,6 @@ const photoLibraryInputRef = ref<HTMLInputElement | null>(null)
 const cameraCaptureInputRef = ref<HTMLInputElement | null>(null)
 const folderPickerInputRef = ref<HTMLInputElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
-const { isMobile } = useMobile()
 const isAttachMenuOpen = ref(false)
 const mentionStartIndex = ref<number | null>(null)
 const mentionQuery = ref('')
@@ -581,7 +579,6 @@ let fileMentionDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let isHoldPressActive = false
 let dragDepth = 0
 let attachmentSessionToken = 0
-const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
 const DRAFT_STORAGE_PREFIX = 'codex-web-local.thread-draft.v1.'
 let lastActiveThreadId = ''
 
@@ -968,10 +965,6 @@ function onSubmit(mode: 'steer' | 'queue' = 'steer'): void {
   folderUploadGroups.value = []
   isAttachMenuOpen.value = false
   closeFileMention()
-  if (isAndroid || isMobile.value) {
-    inputRef.value?.blur()
-    return
-  }
   nextTick(() => inputRef.value?.focus())
 }
 
@@ -1887,11 +1880,11 @@ watch(
 }
 
 .thread-composer:has(.thread-composer-input-wrap--expanded) {
-  @apply fixed inset-0 z-50 max-w-none bg-white/95 p-3 sm:p-6;
+  @apply fixed inset-0 z-50 max-w-none bg-white/95 p-6;
 }
 
 .thread-composer-shell {
-  @apply relative rounded-2xl border border-zinc-300 bg-white p-2 sm:p-3 shadow-sm;
+  @apply relative rounded-2xl border border-zinc-300 bg-white p-3 shadow-sm;
 }
 
 .thread-composer:has(.thread-composer-input-wrap--expanded) .thread-composer-shell {
@@ -2094,7 +2087,7 @@ watch(
 }
 
 .thread-composer-input {
-  @apply w-full min-w-0 min-h-10 sm:min-h-11 max-h-40 rounded-xl border-0 bg-transparent px-1 py-2 pr-10 text-sm text-zinc-900 outline-none transition resize-none overflow-y-auto;
+  @apply w-full min-w-0 min-h-11 max-h-40 rounded-xl border-0 bg-transparent px-1 py-2 pr-10 text-sm text-zinc-900 outline-none transition resize-none overflow-y-auto;
 }
 
 .thread-composer-input-wrap--expanded .thread-composer-input {
@@ -2118,11 +2111,11 @@ watch(
 }
 
 .thread-composer-controls {
-  @apply relative mt-2 sm:mt-3 flex items-center gap-2 sm:gap-4 overflow-visible pb-px;
+  @apply relative mt-3 flex items-center gap-4 overflow-visible pb-px;
 }
 
 .thread-composer-controls--recording {
-  @apply gap-1 sm:gap-2;
+  @apply gap-2;
 }
 
 .thread-composer-attach {
@@ -2225,7 +2218,6 @@ watch(
 
 .thread-composer-mic {
   @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 bg-zinc-100 text-zinc-600 transition hover:bg-zinc-200 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-400;
-  touch-action: none;
 }
 
 .thread-composer-mic--active {

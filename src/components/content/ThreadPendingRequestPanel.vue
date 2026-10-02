@@ -989,7 +989,7 @@ function onRejectUnknownRequest(request: UiServerRequest): void {
 }
 
 .thread-pending-request-shell {
-  @apply w-full rounded-[1.75rem] border border-zinc-700 bg-zinc-900 px-4 py-4 sm:px-5 sm:py-4 text-zinc-100 shadow-xl;
+  @apply w-full rounded-[1.75rem] border border-zinc-700 bg-zinc-900 px-5 py-4 text-zinc-100 shadow-xl;
 }
 
 .thread-pending-request-shell--no-top-radius {
@@ -1152,17 +1152,4 @@ function onRejectUnknownRequest(request: UiServerRequest): void {
   @apply border-zinc-700 bg-transparent text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800;
 }
 
-@media (max-width: 640px) {
-  .thread-pending-request-shell {
-    @apply rounded-[1.5rem] px-3 py-3;
-  }
-
-  .thread-pending-request-footer--approval {
-    @apply flex-wrap;
-  }
-
-  .thread-pending-request-inline-input {
-    @apply basis-full;
-  }
-}
 </style>

@@ -13,7 +13,7 @@ PR #131 revert: remove project recency ordering and mobile project move mode whi
 2. Open the Projects organize menu.
 3. Confirm the menu still exposes thread organization and chat sort controls, but does not expose project recency/manual sort controls.
 4. Open a project action menu and confirm browse, rename, remove, worktree, and git status actions still behave normally.
-5. On a mobile-sized viewport, confirm there is no project move mode affordance or drag handle from PR #131.
+5. Confirm the Projects header has no move-mode toggle from PR #131; normal mouse reordering still works.
 6. Switch to dark theme and repeat steps 1-5.
 
 #### Expected Results
