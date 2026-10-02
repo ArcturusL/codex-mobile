@@ -1688,7 +1688,7 @@ onMounted(async () => {
 @reference "tailwindcss";
 
 .directory-hub {
-  @apply flex h-full w-full flex-col gap-3 overflow-y-auto p-3 sm:p-6;
+  @apply flex h-full w-full flex-col gap-3 overflow-y-auto p-6;
 }
 
 .directory-header {
@@ -1700,7 +1700,7 @@ onMounted(async () => {
 }
 
 .directory-title {
-  @apply m-0 text-xl font-semibold text-zinc-900 sm:text-2xl;
+  @apply m-0 text-2xl font-semibold text-zinc-900;
 }
 
 .directory-subtitle {
@@ -1767,7 +1767,7 @@ onMounted(async () => {
 }
 
 .mcp-skill-grid {
-  @apply grid grid-cols-1 gap-3 md:grid-cols-2;
+  @apply grid grid-cols-2 gap-3;
 }
 
 .mcp-skill-card {
@@ -1831,7 +1831,7 @@ onMounted(async () => {
 }
 
 .directory-toolbar {
-  @apply flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between;
+  @apply flex items-center justify-between gap-2;
 }
 
 .directory-search {
@@ -1851,7 +1851,7 @@ onMounted(async () => {
 }
 
 .directory-grid {
-  @apply grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3;
+  @apply grid grid-cols-2 gap-3 xl:grid-cols-3;
 }
 
 .directory-list {
@@ -1968,16 +1968,16 @@ button.directory-card {
 }
 
 .directory-modal-overlay {
-  @apply fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center;
+  @apply fixed inset-0 z-50 flex items-center justify-center bg-black/40;
 }
 
 .directory-modal {
-  @apply flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:max-h-[82vh] sm:rounded-2xl;
+  @apply flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl;
 }
 
 .directory-modal-header,
 .directory-modal-footer {
-  @apply flex shrink-0 items-center justify-between gap-3 p-4 sm:p-5;
+  @apply flex shrink-0 items-center justify-between gap-3 p-5;
 }
 
 .directory-modal-header {
@@ -1993,7 +1993,7 @@ button.directory-card {
 }
 
 .directory-modal-body {
-  @apply flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 sm:p-5;
+  @apply flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5;
 }
 
 .directory-detail-description {
@@ -2001,7 +2001,7 @@ button.directory-card {
 }
 
 .directory-detail-grid {
-  @apply grid grid-cols-1 gap-3 sm:grid-cols-2;
+  @apply grid grid-cols-2 gap-3;
 }
 
 .directory-detail-block,
@@ -2034,7 +2034,7 @@ button.directory-card {
 }
 
 .directory-screenshots {
-  @apply grid grid-cols-1 gap-3 sm:grid-cols-2;
+  @apply grid grid-cols-2 gap-3;
 }
 
 .directory-screenshots img {
@@ -2050,7 +2050,7 @@ button.directory-card {
 }
 
 .composio-preview-hero {
-  @apply flex flex-col gap-4 overflow-hidden rounded-xl border border-sky-200 bg-sky-50 p-4 sm:flex-row sm:items-center sm:justify-between;
+  @apply flex items-center justify-between gap-4 overflow-hidden rounded-xl border border-sky-200 bg-sky-50 p-4;
 }
 
 .composio-preview-copy {
@@ -2074,7 +2074,7 @@ button.directory-card {
 }
 
 .composio-preview-grid {
-  @apply grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3;
+  @apply grid grid-cols-2 gap-3 xl:grid-cols-3;
 }
 
 .composio-preview-card {

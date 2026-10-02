@@ -1,6 +1,6 @@
 # Skills, Plugins, and Integrations
 
-Skills Hub, skill sync, plugin/app directory surfaces, prompts, Composio, Telegram, and installed skill behavior.
+Skills Hub, skill sync, plugin/app directory surfaces, prompts, Composio, and installed skill behavior.
 
 Return to the [manual test index](../../tests.md).
 
@@ -8,9 +8,7 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
-| [Feature: Telegram bot token stored in dedicated global file](telegram-bot-token-stored-in-dedicated-global-file.md) |
-| [Feature: Telegram chatIds persisted for bot DM sending](telegram-chatids-persisted-for-bot-dm-sending.md) |
-| [Feature: Telegram bridge rejects unauthorized senders](telegram-bridge-rejects-unauthorized-senders.md) |
+| [Telegram support removed](telegram-support-removed.md) |
 | [Feature: Skills dropdown closes after selection in composer](skills-dropdown-closes-after-selection-in-composer.md) |
 | [Feature: Skills Hub local-only installed skills](skills-hub-local-only-installed-skills.md) |
 | [Composio logged-out connector preview](composio-logged-out-connector-preview.md) |
