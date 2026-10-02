@@ -1915,3 +1915,17 @@
 :root.dark .file-change-review-button {
   @apply border-zinc-700 text-zinc-200 hover:bg-zinc-800;
 }
+
+:root.dark .file-link-context-menu {
+  background: #18181b;
+  border-color: #3f3f46;
+}
+
+:root.dark .file-link-context-menu-item,
+:root.dark .file-link-copy-status {
+  color: #e4e4e7;
+}
+
+:root.dark .file-link-context-menu-item:hover {
+  background: #27272a;
+}

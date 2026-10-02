@@ -1,11 +1,16 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createReadStream } from 'node:fs'
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import { open, readFile, readdir, rm, stat } from 'node:fs/promises'
 
 // Shared by the packaged server and Vite; authentication stays upstream.
 export async function localFileActionsMiddleware(req: IncomingMessage, res: ServerResponse, next: () => void) {
   const url = new URL(req.url ?? '/', 'http://localhost')
-  if (url.pathname !== '/codex-local-file' || req.method !== 'DELETE') return next()
+  if (url.pathname !== '/codex-local-file') return next()
+  if (req.method === 'GET' && url.searchParams.get('format') === 'text') {
+    return serveLocalFileText(url.searchParams.get('path') ?? '', res)
+  }
+  if (req.method !== 'DELETE') return next()
   res.setHeader('Content-Type', 'application/json')
   res.setHeader('Cache-Control', 'no-store')
   // A custom header prevents cross-origin forms from issuing destructive requests.
@@ -26,6 +31,42 @@ export async function localFileActionsMiddleware(req: IncomingMessage, res: Serv
   } catch (error) {
     res.statusCode = (error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500
     res.end(JSON.stringify({ error: 'Could not remove this item. Check that it exists and you have permission.' }))
+  }
+}
+
+async function serveLocalFileText(rawPath: string, res: ServerResponse): Promise<void> {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.setHeader('Cache-Control', 'private, no-store')
+  const fail = (status: number, error: string) => {
+    res.statusCode = status
+    res.end(JSON.stringify({ error }))
+  }
+  const path = normalizeLocalPath(rawPath)
+  if (!isAbsolute(path) || path.includes('\0')) return fail(400, 'Expected absolute local file path.')
+  const maxBytes = 10 * 1024 * 1024
+  try {
+    const fileStat = await stat(path)
+    if (!fileStat.isFile()) return fail(400, 'Only text files can be copied.')
+    if (fileStat.size > maxBytes) return fail(413, 'File is too large to copy (maximum 10 MB).')
+    const chunks: Buffer[] = []
+    let size = 0
+    for await (const chunk of createReadStream(path)) {
+      size += chunk.length
+      if (size > maxBytes) return fail(413, 'File is too large to copy (maximum 10 MB).')
+      chunks.push(chunk)
+    }
+    const buffer = Buffer.concat(chunks)
+    let content: string
+    try {
+      content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buffer)
+      if (content.includes('\0')) throw new Error('Binary file')
+    } catch {
+      return fail(415, 'Only UTF-8 text files can be copied.')
+    }
+    res.end(JSON.stringify({ content }))
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    fail(code === 'ENOENT' ? 404 : 500, 'Could not read this file. Check that it exists and you have permission.')
   }
 }
 

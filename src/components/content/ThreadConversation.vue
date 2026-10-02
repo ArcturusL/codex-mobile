@@ -827,6 +827,15 @@
         Copy link
       </button>
       <button
+        v-if="fileLinkContextTextUrl"
+        type="button"
+        class="file-link-context-menu-item"
+        :disabled="isCopyingFileText"
+        @click="copyFileLinkContextText"
+      >
+        {{ isCopyingFileText ? 'Copying…' : 'Copy file text' }}
+      </button>
+      <button
         v-if="fileLinkContextEditUrl"
         type="button"
         class="file-link-context-menu-item"
@@ -834,6 +843,7 @@
       >
         Edit file
       </button>
+      <p v-if="fileLinkCopyStatus" class="file-link-copy-status" role="status">{{ fileLinkCopyStatus }}</p>
     </div>
 
     <dialog v-if="activeDiffViewerChange" ref="diffDialogRef" class="diff-viewer-backdrop" aria-label="Changes in this turn" @cancel.prevent="closeDiffViewer" @click.self="closeDiffViewer">
@@ -944,6 +954,9 @@ const fileLinkContextMenuX = ref(0)
 const fileLinkContextMenuY = ref(0)
 const fileLinkContextBrowseUrl = ref('')
 const fileLinkContextEditUrl = ref('')
+const fileLinkContextTextUrl = ref('')
+const isCopyingFileText = ref(false)
+const fileLinkCopyStatus = ref('')
 const { buildFeedbackMailto, feedbackMailtoBase, recordVisibleFailure } = useFeedbackDiagnostics()
 const feedbackMailto = feedbackMailtoBase()
 
@@ -2919,7 +2932,7 @@ function toBrowseUrl(pathValue: string): string {
 
   if (looksLikeAbsolutePath(resolved)) {
     const normalizedResolved = resolved.startsWith('/') ? resolved : `/${resolved}`
-    return `/codex-local-browse${encodeURI(normalizedResolved)}`
+    return `/codex-local-browse${normalizedResolved.split('/').map(encodeURIComponent).join('/')}`
   }
 
   return '#'
@@ -2958,6 +2971,17 @@ function onConversationContextMenu(event: MouseEvent): void {
 
   fileLinkContextBrowseUrl.value = href
   fileLinkContextEditUrl.value = toEditUrlFromBrowseHref(href)
+  fileLinkContextTextUrl.value = ''
+  fileLinkCopyStatus.value = ''
+  try {
+    const url = new URL(href, window.location.href)
+    if (url.origin === window.location.origin && url.pathname.startsWith('/codex-local-browse/')) {
+      const path = decodeURIComponent(url.pathname.slice('/codex-local-browse'.length))
+      fileLinkContextTextUrl.value = `/codex-local-file?format=text&path=${encodeURIComponent(path)}`
+    }
+  } catch {
+    // Malformed or external links do not expose local file actions.
+  }
   fileLinkContextMenuX.value = event.clientX
   fileLinkContextMenuY.value = event.clientY
   isFileLinkContextMenuVisible.value = true
@@ -2991,6 +3015,42 @@ async function copyFileLinkContextLink(): Promise<void> {
     await copyTextToClipboard(href)
   } catch {
     // Clipboard writes can be blocked by browser permissions; keep the context action best-effort.
+  }
+}
+
+async function copyFileLinkContextText(): Promise<void> {
+  const url = fileLinkContextTextUrl.value
+  if (!url || isCopyingFileText.value) return
+  isCopyingFileText.value = true
+  fileLinkCopyStatus.value = ''
+  const content = (async () => {
+    const response = await fetch(url, { cache: 'no-store' })
+    const data = await response.json()
+    if (!response.ok || typeof data.content !== 'string') {
+      throw new Error(data.error || 'Could not read this file.')
+    }
+    return data.content as string
+  })()
+  try {
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      try {
+        // Start the clipboard write during the click, preserving Safari's user activation.
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/plain': content.then(text => new Blob([text], { type: 'text/plain' })),
+        })])
+      } catch {
+        await copyTextToClipboard(await content)
+      }
+    } else {
+      await copyTextToClipboard(await content)
+    }
+    if (fileLinkContextTextUrl.value === url) fileLinkCopyStatus.value = 'File text copied.'
+  } catch (error) {
+    if (fileLinkContextTextUrl.value === url) {
+      fileLinkCopyStatus.value = error instanceof Error ? error.message : 'Could not copy file text.'
+    }
+  } finally {
+    isCopyingFileText.value = false
   }
 }
 
@@ -5191,7 +5251,11 @@ onBeforeUnmount(() => {
 }
 
 .file-link-context-menu-item {
-  @apply block w-full rounded-md px-2 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100;
+  @apply block w-full rounded-md px-2 py-1.5 text-left text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-50;
+}
+
+.file-link-copy-status {
+  @apply m-0 max-w-64 px-2 py-1.5 text-xs text-zinc-600;
 }
 
 .message-divider {
