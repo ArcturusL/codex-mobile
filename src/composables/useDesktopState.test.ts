@@ -619,6 +619,42 @@ describe('startup request deduplication', () => {
   })
 })
 
+describe('automatic conversation titles', () => {
+  it('titles a background reply only after success, deduplicates events, and preserves a manual rename', async () => {
+    installTestWindow()
+    let notify: (event: { method: string; params: unknown }) => void = () => {}
+    gatewayMocks.subscribeCodexNotifications.mockImplementation((handler) => { notify = handler; return vi.fn() })
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({
+      groups: [{ projectName: 'Project', threads: [thread('title-test', '/tmp/project')] }], nextCursor: null,
+    })
+    let finish: (title: string) => void = () => {}
+    gatewayMocks.generateThreadTitle.mockImplementation(() => new Promise<string>((resolve) => { finish = resolve }))
+    gatewayMocks.renameThread.mockResolvedValue(undefined)
+    gatewayMocks.persistThreadTitle.mockResolvedValue(undefined)
+    gatewayMocks.setThreadQueueState.mockResolvedValue(undefined)
+    const state = useDesktopState()
+    await state.refreshAll({ includeSelectedThreadMessages: false })
+    state.startPolling()
+    notify({ method: 'item/completed', params: { threadId: 'title-test', item: { id: 'answer', type: 'agentMessage', text: 'Computed caches values.' } } })
+    expect(gatewayMocks.generateThreadTitle).not.toHaveBeenCalled()
+    notify({ method: 'turn/completed', params: { threadId: 'title-test', turn: { id: 'failed', status: 'failed' } } })
+    expect(gatewayMocks.generateThreadTitle).not.toHaveBeenCalled()
+    const completed = { method: 'turn/completed', params: { threadId: 'title-test', turn: { id: 'ok', status: 'completed' } } }
+    notify(completed)
+    notify(completed)
+    expect(gatewayMocks.generateThreadTitle).toHaveBeenCalledTimes(1)
+    expect(gatewayMocks.generateThreadTitle).toHaveBeenCalledWith(expect.stringContaining('Computed caches values.'), '/tmp/project', expect.objectContaining({ threadId: 'title-test' }))
+    finish('计算属性缓存')
+    await vi.waitFor(() => expect(gatewayMocks.persistThreadTitle).toHaveBeenCalledWith('title-test', '计算属性缓存'))
+    expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('计算属性缓存')
+    notify({ method: 'thread/name/updated', params: { threadId: 'title-test', threadName: '我的标题' } })
+    notify(completed)
+    expect(gatewayMocks.generateThreadTitle).toHaveBeenCalledTimes(1)
+    expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('我的标题')
+    state.stopPolling()
+  })
+})
+
 describe('live error overlay', () => {
   it('shows the default thinking overlay while a selected thread is in progress without activity events', async () => {
     installTestWindow()
