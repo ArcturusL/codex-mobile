@@ -20,3 +20,13 @@ Runtime smoke command after `npm run build:frontend && npm run build:cli`:
 ```sh
 node -e "const {spawnSync}=require('node:child_process'); const r=spawnSync(process.execPath,['dist-cli/index.js','--help'],{encoding:'utf8'}); if(r.status!==0 || !r.stdout.includes('Usage:')) process.exit(1); console.log('Packaged CLI --help: PASS')"
 ```
+
+
+## Update failure diagnostics and copying
+
+Setup: isolated candidate with a simulated failed updater response in each theme; do not fill the real disk or start a production update for testing.
+
+- Simulate npm exiting zero with `TAR_ENTRY_ERROR ENOSPC` on stderr. The updater must report disk-full, retain diagnostic details and leave the old selection unchanged. A later periodic version check must preserve this installation failure until the next installation attempt.
+- Open Settings after a failed update. The error is selectable despite the sidebar's `select-none`; long details wrap and scroll inside the error block. A previous restart notice must not label the failed attempt successful.
+- Click Copy error: clipboard must contain the translated summary and complete displayed diagnostic details, including line breaks. Deny clipboard access and the fallback: show manual-copy guidance while keeping the original error selectable. Validate both light and dark themes.
+- Cleanup: remove browser response stubs. No new background requests are introduced; error formatting happens only on failure and details are bounded to 16,000 characters plus a truncation marker.

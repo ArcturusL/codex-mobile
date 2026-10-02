@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
-import { createCodexUpdater, isNewerCodexVersion } from './codexUpdate'
+import { createCodexUpdater, isNewerCodexVersion, describeCodexUpdateError } from './codexUpdate'
 import { getManagedCodexCommand, resolveCodexCommand } from '../commandResolution'
 
 const httpFetch = globalThis.fetch
@@ -30,6 +30,7 @@ const root = process.env.CODEX_HOME;
 fs.appendFileSync(path.join(root, 'installs'), '1');
 const mode = fs.readFileSync(path.join(root, 'mode'), 'utf8');
 if (mode === 'fail') process.exit(1);
+if (mode === 'disk-full') { console.error('npm warn tar TAR_ENTRY_ERROR ENOSPC: no space left on device, write'); process.exit(0); }
 if (!process.argv.includes('@openai/codex@0.154.0') || !process.argv.includes('--ignore-scripts')) process.exit(2);
 const prefix = process.argv[process.argv.indexOf('--prefix') + 1];
 const target = path.join(prefix, 'node_modules/@openai/codex/bin');
@@ -80,6 +81,16 @@ fs.writeFileSync(path.join(target, 'codex.js'), "console.log('codex-cli " + (mod
     expect((await update()).status).toBe(202)
     expect((await settled()).error).toMatch('update failed')
     expect(getManagedCodexCommand()).toBeNull()
+    await writeFile(join(root, 'mode'), 'disk-full')
+    expect((await update()).status).toBe(202)
+    const diskFailure = await settled()
+    expect(diskFailure.error).toContain('disk is full')
+    expect(diskFailure.errorDetails).toContain('ENOSPC')
+    expect(getManagedCodexCommand()).toBeNull()
+    const later = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 12 * 60 * 60 * 1000)
+    scheduledCheck()
+    expect(await (await get()).json()).toMatchObject({ error: diskFailure.error, errorDetails: diskFailure.errorDetails })
+    later.mockRestore()
     await writeFile(join(root, 'mode'), 'mismatch')
     expect((await update()).status).toBe(202)
     expect((await settled()).error).toMatch('did not match')
@@ -88,7 +99,7 @@ fs.writeFileSync(path.join(target, 'codex.js'), "console.log('codex-cli " + (mod
     await Promise.all(Array.from({ length: 8 }, () => update()))
     const complete = await settled()
     expect(complete).toMatchObject({ currentVersion: '0.154.0', updating: false, updateAvailable: false, restartRequired: true, error: null })
-    expect(await readFile(join(root, 'installs'), 'utf8')).toBe('111')
+    expect(await readFile(join(root, 'installs'), 'utf8')).toBe('1111')
     expect(resolveCodexCommand()).toBe(getManagedCodexCommand())
     updater.dispose()
     updater = createCodexUpdater()
@@ -107,4 +118,14 @@ fs.writeFileSync(path.join(target, 'codex.js'), "console.log('codex-cli " + (mod
     vi.restoreAllMocks()
     await rm(root, { recursive: true, force: true })
   }
+})
+
+
+test('update diagnostics classify missing binaries and redact credentials with bounded output', () => {
+  expect(describeCodexUpdateError(new Error('Missing optional dependency @openai/codex-linux-x64')).error).toContain('platform package is missing')
+  const result = describeCodexUpdateError({ stderr: 'ENOSPC https://user:secret@example.test _authToken=secret Bearer secret', stdout: 'x'.repeat(20_000) })
+  expect(result.error).toContain('disk is full')
+  expect(result.errorDetails).not.toContain('secret')
+  expect(result.errorDetails.length).toBeLessThan(16_100)
+  expect(result.errorDetails).toContain('[truncated]')
 })

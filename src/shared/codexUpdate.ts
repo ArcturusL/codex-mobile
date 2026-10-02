@@ -7,4 +7,5 @@ export type CodexUpdateStatus = {
   updateAvailable: boolean
   restartRequired: boolean
   error: string | null
+  errorDetails?: string | null
 }

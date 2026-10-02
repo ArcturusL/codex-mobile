@@ -12,6 +12,23 @@ const CHECK_INTERVAL = 6 * 60 * 60 * 1000
 const REGISTRY = 'https://registry.npmjs.org'
 const STABLE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 
+export function describeCodexUpdateError(error: unknown): { error: string; errorDetails: string } {
+  const failure = error as { message?: string; stdout?: string; stderr?: string; code?: string }
+  const details = [failure?.message, failure?.stderr, failure?.stdout].filter(Boolean).join('\n') || String(error)
+  const message = /ENOSPC|no space left on device/i.test(details)
+    ? 'Codex update failed: the disk is full. Free disk space and retry. The previous version is unchanged.'
+    : /Missing optional dependency @openai\/codex-/i.test(details)
+      ? 'Codex update failed: the platform package is missing. Check the error details and retry.'
+      : details.includes('Installed Codex version did not match.')
+        ? 'Installed Codex version did not match. The previous version is unchanged.'
+        : 'Codex update failed. Check npm, network access, disk space and directory permissions, then retry.'
+  // Keep diagnostics bounded and remove credentials before returning package-manager output to the UI.
+  const sanitized = details.replace(/(https?:\/\/)[^\s/@]+(?::[^\s/@]*)?@/gi, '$1[redacted]@')
+    .replace(/((?:_authToken|_auth|password|token)\s*[=:]\s*)[^\s]+/gi, '$1[redacted]')
+    .replace(/(Bearer\s+)\S+/gi, '$1[redacted]')
+  return { error: message, errorDetails: sanitized.length > 16_000 ? sanitized.slice(0, 16_000) + '\n[truncated]' : sanitized }
+}
+
 export function isNewerCodexVersion(latest: string, current: string): boolean {
   if (!STABLE_VERSION.test(latest)) return false
   const match = /^(\d+)\.(\d+)\.(\d+)(-[\w.-]+)?(?:\+[\w.-]+)?$/.exec(current)
@@ -41,13 +58,15 @@ export function createCodexUpdater() {
   let command: string | null = null
   let lastAttempt = 0
   let checking: Promise<void> | null = null
+  let installationError: ReturnType<typeof describeCodexUpdateError> | null = null
 
   function check(force = false): Promise<void> {
     if (checking) return checking
     if (status.updating || Date.now() - lastAttempt < (force ? 60_000 : CHECK_INTERVAL)) return Promise.resolve()
     lastAttempt = Date.now()
     status.checking = true
-    status.error = null
+    status.error = installationError?.error ?? null
+    status.errorDetails = installationError?.errorDetails ?? null
     checking = (async () => {
       try {
         command ??= resolveCodexCommand()
@@ -63,7 +82,7 @@ export function createCodexUpdater() {
         status.checkedAt = new Date().toISOString()
         status.updateAvailable = Boolean(status.currentVersion && isNewerCodexVersion(data.version, status.currentVersion))
       } catch (error) {
-        status.error = error instanceof Error ? error.message : 'Could not check for Codex updates. Try again later.'
+        if (!installationError) status.error = error instanceof Error ? error.message : 'Could not check for Codex updates. Try again later.'
       } finally {
         status.checking = false
         checking = null
@@ -81,13 +100,11 @@ export function createCodexUpdater() {
       staging = await mkdtemp(join(root, 'install-'))
       const invocation = getSpawnInvocation('npm', [
         'install', '--prefix', staging, '--registry', REGISTRY, '--ignore-scripts',
-        '--no-audit', '--no-fund', '--package-lock=false', '--save-exact', `@openai/codex@${version}`,
+        '--no-audit', '--no-fund', '--include=optional', '--package-lock=false', '--save-exact', `@openai/codex@${version}`,
       ])
-      try {
-        await exec(invocation.command, invocation.args, { timeout: 300_000, maxBuffer: 1024 * 1024, windowsHide: true })
-      } catch {
-        throw new Error('Codex update failed. Check npm, network access, disk space and directory permissions, then retry.')
-      }
+      const { stdout, stderr } = await exec(invocation.command, invocation.args, { timeout: 300_000, maxBuffer: 1024 * 1024, windowsHide: true })
+      // npm can exit successfully after dropping an optional platform binary on ENOSPC.
+      if (/ENOSPC|no space left on device/i.test(stdout + stderr)) throw new Error(stderr + '\n' + stdout)
       const installedCommand = join(staging, 'node_modules', '@openai', 'codex', 'bin', 'codex.js')
       if (await readVersion(installedCommand) !== version) throw new Error('Installed Codex version did not match. The previous version is unchanged.')
       // Activate only after validation; keep the previous installation for rollback.
@@ -99,7 +116,8 @@ export function createCodexUpdater() {
       status.updateAvailable = false
       status.restartRequired = true
     } catch (error) {
-      status.error = error instanceof Error ? error.message : 'Codex update failed.'
+      installationError = describeCodexUpdateError(error)
+      Object.assign(status, installationError)
     } finally {
       if (staging) await rm(staging, { recursive: true, force: true }).catch(() => {})
       status.updating = false
@@ -142,7 +160,9 @@ export function createCodexUpdater() {
           // Recheck after awaiting: simultaneous clicks must start only one installation.
           if (!status.updating) {
             status.updating = true
+            installationError = null
             status.error = null
+            status.errorDetails = null
             void install()
           }
         }

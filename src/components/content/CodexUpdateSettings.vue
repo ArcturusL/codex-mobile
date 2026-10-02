@@ -7,9 +7,16 @@
     <p v-if="status?.latestVersion">{{ t('Latest stable version') }}: v{{ status.latestVersion }}</p>
     <p>{{ t('Automatically checks every 6 hours') }}</p>
     <p v-if="status?.checkedAt">{{ t('Last checked') }}: {{ new Date(status.checkedAt).toLocaleString() }}</p>
-    <p v-if="status?.restartRequired" role="status">{{ t('Updated. Restart the WebUI service to use the new version in all sessions.') }}</p>
+    <p v-if="status?.restartRequired && !errorMessage" role="status">{{ t('Updated. Restart the WebUI service to use the new version in all sessions.') }}</p>
     <p v-else-if="status?.latestVersion && !status.updateAvailable && !status.error">{{ t('No newer stable version available') }}</p>
-    <p v-if="error || status?.error" class="codex-update-error" role="alert">{{ t(error || status?.error || '') }}</p>
+    <div v-if="errorMessage" class="codex-update-error" role="alert">
+      <p>{{ errorMessage }}</p>
+      <pre v-if="!error && status?.errorDetails">{{ status.errorDetails }}</pre>
+      <div class="codex-update-actions">
+        <button type="button" @click="copyError">{{ t('Copy error') }}</button>
+        <span role="status">{{ t(copyResult) }}</span>
+      </div>
+    </div>
     <div class="codex-update-actions">
       <button type="button" :disabled="busy || status?.updating || status?.checking" @click="request('check')">
         {{ busy || status?.checking ? t('Checking…') : t('Check for updates') }}
@@ -23,14 +30,27 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useUiLanguage } from '../../composables/useUiLanguage'
 import type { CodexUpdateStatus } from '../../shared/codexUpdate'
+import { copyTextToClipboard } from '../../utils/clipboard'
 
 const { t } = useUiLanguage()
 const status = ref<CodexUpdateStatus | null>(null)
 const busy = ref(false)
 const error = ref('')
+const errorMessage = computed(() => t(error.value || status.value?.error || ''))
+const errorText = computed(() => [errorMessage.value, !error.value && status.value?.errorDetails].filter(Boolean).join('\n\n'))
+const copyResult = ref('')
+watch(errorText, () => { copyResult.value = '' })
+async function copyError() {
+  try {
+    await copyTextToClipboard(errorText.value)
+    copyResult.value = 'Error copied'
+  } catch {
+    copyResult.value = 'Copy failed. Select the error text to copy it manually.'
+  }
+}
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 
@@ -68,5 +88,6 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 .codex-update-actions button { border: 1px solid #d4d4d8; border-radius: 6px; padding: 5px 9px; background: #fff; color: inherit; cursor: pointer; }
 .codex-update-actions button:disabled { opacity: .5; cursor: default; }
 .codex-update-actions button:focus-visible { outline: 2px solid #71717a; outline-offset: 2px; }
-.codex-update-error { color: #be123c; }
+.codex-update-error { color: #be123c; user-select: text; -webkit-user-select: text; cursor: text; }
+.codex-update-error pre { max-height: 12rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 </style>
