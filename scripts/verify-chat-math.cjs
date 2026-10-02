@@ -11,7 +11,7 @@ const filePath = `${cwd}/formula.md`
 const marker = `TESTCHAT_MATH_${Date.now()}`
 const content = String.raw`${marker}
 
-Inline $x^2$ and \(\frac{a}{b}\).
+Inline $x^2$ and \(\frac{a}{b}\). 反推与宏观应当是 $\left(x_i\right)^{l}_{j}$。这能解释。
 
 **Result $u^2$** *sum $v^2$* ~~$w^2$~~
 
@@ -133,13 +133,18 @@ async function assertRendered(page) {
       emphasisDetail: { strong: element.querySelectorAll('strong .katex').length, em: element.querySelectorAll('em .katex').length, s: element.querySelectorAll('s .katex').length, literalMarkers: [...element.querySelectorAll('.message-text')].filter((node) => node.textContent.includes('**')).map((node) => node.textContent) },
       emphasisOk: !!element.querySelector('strong .katex') && !!element.querySelector('em .katex') && !!element.querySelector('s .katex') && !element.textContent.includes('**'),
       displays,
+      scrollbarsHidden: [...element.querySelectorAll('.message-math')].every((node) => (
+        getComputedStyle(node).scrollbarWidth === 'none'
+        && getComputedStyle(node, '::-webkit-scrollbar').display === 'none'
+        && node.offsetHeight === node.clientHeight
+      )),
       pageOverflow: document.documentElement.scrollWidth > innerWidth + 1,
       invalidMath: element.querySelectorAll('.katex-error').length,
       dark: document.documentElement.classList.contains('dark'),
       color: getComputedStyle(element.querySelector('.katex')).color,
     }
   }, { filePath, marker })
-  for (const key of ['hrefOk', 'titleOk', 'textOk', 'codeOk', 'moneyOk', 'tableOk', 'listOk', 'emphasisOk']) assert(evidence[key], `${key}: ${JSON.stringify(evidence)}`)
+  for (const key of ['hrefOk', 'titleOk', 'textOk', 'codeOk', 'moneyOk', 'tableOk', 'listOk', 'emphasisOk', 'scrollbarsHidden']) assert(evidence[key], `${key}: ${JSON.stringify(evidence)}`)
   for (const formula of ['x^2', '\\frac{a}{b}', '\\int_0^1 x^2\\,dx=\\frac{1}{3}', '\\begin{bmatrix}1 & 2 \\\\ 3 & 4\\end{bmatrix}', 'a_i^2+b_i^2=c_i^2', '\\sqrt{2}', '|x|', 'x^3', 'y^3', 'u^2', 'v^2', 'w^2']) assert(evidence.annotations.includes(formula), `Missing rendered formula: ${formula}`)
   assert(!evidence.pageOverflow, 'Page must not overflow horizontally')
   assert.equal(evidence.invalidMath, 0)
@@ -223,7 +228,7 @@ async function run(browser, viewport, theme, profile) {
     await page.screenshot({ path: screenshot, fullPage: true })
     const conversationScreenshot = resolve(outputDir, `testchat-math-conversation-${theme}-${viewport.width}x${viewport.height}-cjs.png`)
     await page.locator('.conversation-list').screenshot({ path: conversationScreenshot })
-    if (theme === 'light' && viewport.width === 375) await page.screenshot({ path: resolve(outputDir, 'testchat-math-cjs.png'), fullPage: true })
+    if (theme === 'light' && viewport.width === 1024) await page.screenshot({ path: resolve(outputDir, 'testchat-math-cjs.png'), fullPage: true })
     assert.deepEqual(state.externalRequests, [], 'No external runtime requests')
     assert.deepEqual(state.pageErrors, [], 'No browser errors')
     const renderingRpcDelta = Object.fromEntries(Object.entries(during).map(([key, count]) => [key, count - (before[key] || 0)]).filter(([, count]) => count))
@@ -246,9 +251,9 @@ async function main() {
   const browser = await chromium.launch({ headless: true })
   const reports = []
   try {
-    for (const viewport of [{ width: 375, height: 812 }, { width: 768, height: 1024 }]) {
+    for (const viewport of [{ width: 1024, height: 768 }, { width: 1440, height: 900 }]) {
       for (const theme of ['light', 'dark']) {
-        const report = await run(browser, viewport, theme, viewport.width === 375 && theme === 'light')
+        const report = await run(browser, viewport, theme, viewport.width === 1024 && theme === 'light')
         reports.push(report)
         console.log(JSON.stringify({ viewport, theme, hrefOk: report.evidence.hrefOk, titleOk: report.evidence.titleOk, textOk: report.evidence.textOk, screenshot: report.screenshot, performance: report.performance }))
       }

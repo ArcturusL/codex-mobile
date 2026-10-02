@@ -1881,11 +1881,17 @@
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  scrollbar-width: none;
   padding: 0.15em 0;
   vertical-align: middle;
   white-space: normal;
   overflow-wrap: normal;
   color: inherit;
+}
+
+/* Keep oversized formulas scrollable without scrollbar chrome taking up space. */
+.conversation-root .message-math::-webkit-scrollbar {
+  display: none;
 }
 
 .conversation-root .message-math-display {
