@@ -3040,6 +3040,7 @@ export function useDesktopState() {
       turnId,
       itemId,
       receivedAtIso,
+      autoResolveAtIso: typeof row.autoResolveAtIso === 'string' || row.autoResolveAtIso === null ? row.autoResolveAtIso : undefined,
       params: requestParams ?? null,
     }
   }
@@ -3226,9 +3227,9 @@ export function useDesktopState() {
       return true
     }
 
-    if (notification.method === 'server/request/resolved') {
+    if (notification.method === 'server/request/resolved' || notification.method === 'serverRequest/resolved') {
       const row = asRecord(notification.params)
-      const id = row?.id
+      const id = row?.requestId ?? row?.id
       if (typeof id === 'number' && Number.isInteger(id)) {
         removePendingServerRequestById(id)
       }
@@ -5718,6 +5719,10 @@ export function useDesktopState() {
       removePendingServerRequestById(reply.id)
       return true
     } catch (unknownError) {
+      if (unknownError instanceof CodexApiError && unknownError.status === 409) {
+        removePendingServerRequestById(reply.id)
+        return false
+      }
       error.value = unknownError instanceof Error ? unknownError.message : 'Failed to reply to server request'
       return false
     }

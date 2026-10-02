@@ -10,6 +10,7 @@ import {
   useDesktopState,
 } from './useDesktopState'
 import type { UiMessage, UiProjectGroup } from '../types/codex'
+import { CodexApiError } from '../api/codexErrors'
 import type { WorkspaceRootsState } from '../api/codexGateway'
 
 const gatewayMocks = vi.hoisted(() => ({
@@ -92,6 +93,36 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('pending user input requests', () => {
+  it('restores the server deadline and clears the request on official resolution or a stale reply', async () => {
+    installTestWindow()
+    const request = {
+      id: 501, method: 'item/tool/requestUserInput', receivedAtIso: '2026-09-20T00:00:00Z',
+      autoResolveAtIso: '2026-09-20T00:02:00Z',
+      params: { threadId: 'input-thread', turnId: 'turn', questions: [{ id: 'q', question: 'Choose' }] },
+    }
+    gatewayMocks.getPendingServerRequests.mockResolvedValue([request])
+    let notify!: (value: { method: string; params: unknown }) => void
+    gatewayMocks.subscribeCodexNotifications.mockImplementation((handler) => { notify = handler; return vi.fn() })
+    const state = useDesktopState()
+    state.primeSelectedThread('input-thread')
+    state.startPolling()
+    await Promise.resolve()
+    expect(state.selectedThreadServerRequests.value[0]?.autoResolveAtIso).toBe(request.autoResolveAtIso)
+    notify({ method: 'server/request', params: { ...request, autoResolveAtIso: null } })
+    expect(state.selectedThreadServerRequests.value[0]?.autoResolveAtIso).toBeNull()
+    notify({ method: 'serverRequest/resolved', params: { threadId: 'input-thread', requestId: request.id } })
+    expect(state.selectedThreadServerRequests.value).toEqual([])
+    notify({ method: 'server/request', params: request })
+    gatewayMocks.replyToServerRequest.mockRejectedValueOnce(new CodexApiError('Already resolved', { code: 'http_error', status: 409 }))
+    expect(await state.respondToPendingServerRequest({ id: request.id, result: { answers: {} } })).toBe(false)
+    expect(state.selectedThreadServerRequests.value).toEqual([])
+    expect(state.error.value).toBe('')
+    gatewayMocks.setThreadQueueState.mockResolvedValueOnce(undefined)
+    state.stopPolling()
+  })
 })
 
 describe('composer Fast mode', () => {

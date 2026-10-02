@@ -1906,3 +1906,32 @@
 :root.dark .codex-update-heading { color: #e4e4e7; }
 :root.dark .codex-update-actions button { background: #27272a; border-color: #52525b; color: #e4e4e7; }
 :root.dark .codex-update-error { color: #fda4af; }
+
+/* Question panels use the page theme; shared approval panels keep their existing styling. */
+:root:not(.dark) .thread-pending-request-shell--questions {
+  background: #ffffff;
+  border-color: #d4d4d8;
+  color: #18181b;
+}
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-question,
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-input {
+  background: #fafafa;
+  border-color: #d4d4d8;
+  color: #18181b;
+}
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-question-title,
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-title { color: #18181b; }
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-answer-option { border-color: #d4d4d8; }
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-answer-option.is-selected { background: #f4f4f5; border-color: #71717a; }
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-answer-description,
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-question-text,
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-question-description,
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-eyebrow,
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-default { color: #52525b; }
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-countdown { color: #92400e; }
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-primary { background: #18181b; color: #fafafa; }
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-secondary { border-color: #d4d4d8; color: #3f3f46; }
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-secondary:hover { background: #f4f4f5; }
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-validation-error { color: #be123c; }
+
+:root:not(.dark) .thread-pending-request-shell--questions .thread-pending-request-footer { background: #ffffff; }

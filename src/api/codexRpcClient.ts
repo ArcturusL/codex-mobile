@@ -339,6 +339,15 @@ export async function respondServerRequest(body: ServerRequestReplyBody): Promis
   }
 }
 
+export async function snoozeUserInputRequest(id: number): Promise<void> {
+  const response = await fetch('/codex-api/server-requests/snooze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  })
+  if (!response.ok) throw new Error('Could not pause the countdown. Please try again.')
+}
+
 export async function fetchPendingServerRequests(): Promise<unknown[]> {
   const response = await fetch('/codex-api/server-requests/pending')
 

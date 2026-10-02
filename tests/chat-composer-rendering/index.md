@@ -46,3 +46,5 @@ Return to the [manual test index](../../tests.md).
 | [Bold URL trailing punctuation parsing](bold-url-trailing-punctuation-parsing.md) |
 
 - [Composer review mode and access permissions](composer-permissions.md)
+
+- [User questions, custom answers, and automatic defaults](user-input-and-timeout.md)

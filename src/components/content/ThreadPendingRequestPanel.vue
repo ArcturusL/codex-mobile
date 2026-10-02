@@ -2,10 +2,10 @@
   <section v-if="request" class="thread-pending-request">
     <article
       class="thread-pending-request-shell"
-      :class="{ 'thread-pending-request-shell--no-top-radius': hasQueueAbove }"
+      :class="{ 'thread-pending-request-shell--no-top-radius': hasQueueAbove, 'thread-pending-request-shell--questions': request.method === 'item/tool/requestUserInput' }"
     >
       <template v-if="isApprovalRequest(request)">
-        <p class="thread-pending-request-title">{{ requestPanelPrompt(request) }}</p>
+        <p class="thread-pending-request-title">{{ t(requestPanelPrompt(request)) }}</p>
         <p
           v-if="requestPreview(request)"
           class="thread-pending-request-command-line"
@@ -60,8 +60,8 @@
       <template v-else>
         <header class="thread-pending-request-header">
           <div class="thread-pending-request-heading">
-            <p class="thread-pending-request-eyebrow">{{ requestPanelTitle(request) }}</p>
-            <p class="thread-pending-request-title">{{ requestPanelPrompt(request) }}</p>
+            <p class="thread-pending-request-eyebrow">{{ t(requestPanelTitle(request)) }}</p>
+            <p class="thread-pending-request-title">{{ t(requestPanelPrompt(request)) }}</p>
           </div>
           <span v-if="(requestCount ?? 0) > 1" class="thread-pending-request-counter">{{ requestCount ?? 0 }} pending</span>
         </header>
@@ -164,48 +164,79 @@
         </section>
 
         <section v-else-if="request.method === 'item/tool/requestUserInput'" class="thread-pending-request-user-input">
-          <div
-            v-for="question in readToolQuestions(request)"
+          <p v-if="remainingSeconds !== null" class="thread-pending-request-countdown" role="status">
+            {{ t('Default answers in {seconds}s. Start answering to pause.', { seconds: remainingSeconds }) }}
+          </p>
+          <p v-else-if="request.autoResolveAtIso === null || locallyPausedRequestId === request.id" class="thread-pending-request-question-description">
+            {{ t('Countdown paused. Send your answers when ready.') }}
+          </p>
+          <p v-if="snoozeError" class="thread-pending-request-validation-error" role="alert">
+            {{ t(snoozeError) }}
+            <button type="button" class="underline" @click="snoozeCountdown(true)">{{ t('Pause countdown') }}</button>
+          </p>
+          <fieldset
+            v-for="question in toolQuestions"
             :key="`${request.id}:${question.id}`"
             class="thread-pending-request-question"
           >
-            <p class="thread-pending-request-question-title">{{ question.header || question.question }}</p>
+            <legend class="thread-pending-request-question-title">{{ question.header || question.question }}</legend>
             <p v-if="question.question" class="thread-pending-request-question-text">{{ question.question }}</p>
 
             <div v-if="question.options.length > 0" class="thread-pending-request-question-options">
-              <div class="thread-pending-request-select-wrap">
-                <span class="thread-pending-request-select-label">{{ t('Choice') }}</span>
-                <ComposerDropdown
-                  class="thread-pending-request-dropdown"
-                  :model-value="readQuestionAnswer(request.id, question.id, question.options[0]?.label || '')"
-                  :options="toolQuestionOptions(question)"
-                  :placeholder="t('Choice')"
-                  @update:model-value="onQuestionAnswerChange(request.id, question.id, $event)"
-                />
-              </div>
-
-              <p
-                v-if="selectedOptionDescription(request.id, question.id, question.options)"
-                class="thread-pending-request-question-description"
+              <label
+                v-for="(option, index) in question.options"
+                :key="index"
+                class="thread-pending-request-answer-option"
+                @click="snoozeCountdown()"
+                :class="{ 'is-selected': !readQuestionOtherAnswer(request.id, question.id).trim() && readQuestionAnswer(request.id, question.id, question.options[0]?.label || '') === option.label }"
               >
-                {{ selectedOptionDescription(request.id, question.id, question.options) }}
-              </p>
+                <input
+                  type="radio"
+                  :name="`question-${request.id}-${question.id}`"
+                  :value="option.label"
+                  :checked="!readQuestionOtherAnswer(request.id, question.id).trim() && readQuestionAnswer(request.id, question.id, question.options[0]?.label || '') === option.label"
+                  @change="onQuestionAnswerChange(request.id, question.id, option.label)"
+                />
+                <span>
+                  <span class="thread-pending-request-answer-label">{{ option.label }}</span>
+                  <span v-if="index === 0" class="thread-pending-request-default">{{ t('Default') }}</span>
+                  <span v-if="option.description" class="thread-pending-request-answer-description">{{ option.description }}</span>
+                </span>
+              </label>
             </div>
 
-            <label v-if="question.isOther" class="thread-pending-request-input-wrap">
-              <span class="thread-pending-request-select-label">{{ t('Other answer') }}</span>
+            <label class="thread-pending-request-input-wrap">
+              <span class="thread-pending-request-select-label">{{ t(question.options.length ? 'Other answer' : 'Your answer') }}</span>
               <input
+                v-if="question.isSecret"
                 class="thread-pending-request-input"
-                type="text"
+                type="password"
+                autocomplete="off"
                 :value="readQuestionOtherAnswer(request.id, question.id)"
-                :placeholder="t('Other answer')"
+                :placeholder="t('Your answer')"
+                @focus="snoozeCountdown()"
+                @input="onQuestionOtherAnswerInput(request.id, question.id, $event)"
+              />
+              <textarea
+                v-else
+                class="thread-pending-request-input thread-pending-request-freeform"
+                rows="2"
+                :value="readQuestionOtherAnswer(request.id, question.id)"
+                :placeholder="t(question.options.length ? 'Or write your own answer' : 'Your answer')"
+                @focus="snoozeCountdown()"
                 @input="onQuestionOtherAnswerInput(request.id, question.id, $event)"
               />
             </label>
-          </div>
+          </fieldset>
 
           <footer class="thread-pending-request-footer">
-            <button type="button" class="thread-pending-request-primary" @click="onRespondToolRequestUserInput(request)">
+            <button
+              v-if="asRecord(request.params)?.isBlocking !== true"
+              type="button"
+              class="thread-pending-request-secondary"
+              @click="emit('respondServerRequest', { id: request.id, result: { answers: {} } })"
+            >{{ t('Skip') }}</button>
+            <button type="button" class="thread-pending-request-primary" :disabled="!canSubmitAnswers" @click="onRespondToolRequestUserInput(request)">
               {{ t('Send') }}
             </button>
           </footer>
@@ -235,6 +266,8 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { readUserInputQuestions } from '../../shared/userInput'
+import { snoozeUserInputRequest } from '../../api/codexRpcClient'
 import type { UiServerRequest, UiServerRequestReply } from '../../types/codex'
 import { useUiLanguage } from '../../composables/useUiLanguage'
 import ComposerDropdown from './ComposerDropdown.vue'
@@ -244,14 +277,6 @@ type ApprovalDecision = 'accept' | 'acceptForSession' | 'decline' | 'cancel'
 type ApprovalOption = {
   id: Exclude<ApprovalDecision, 'cancel' | 'decline'>
   label: string
-}
-
-type ParsedToolQuestion = {
-  id: string
-  header: string
-  question: string
-  isOther: boolean
-  options: Array<{ label: string; description: string }>
 }
 
 type McpElicitationFieldOption = {
@@ -288,6 +313,44 @@ const toolQuestionOtherAnswers = ref<Record<string, string>>({})
 const mcpElicitationAnswers = ref<Record<string, string | number | boolean | string[] | null>>({})
 const mcpElicitationValidationError = ref('')
 const { t } = useUiLanguage()
+const now = ref(Date.now())
+const snoozeError = ref('')
+const snoozingRequestId = ref<number | null>(null)
+const locallyPausedRequestId = ref<number | null>(null)
+const toolQuestions = computed(() => readUserInputQuestions(props.request?.params))
+const remainingSeconds = computed(() => {
+  const deadline = Date.parse(props.request?.autoResolveAtIso ?? '')
+  return Number.isFinite(deadline) && locallyPausedRequestId.value !== props.request?.id
+    ? Math.max(0, Math.ceil((deadline - now.value) / 1000)) : null
+})
+const canSubmitAnswers = computed(() => toolQuestions.value.length > 0 && toolQuestions.value.every((question) =>
+  readQuestionOtherAnswer(props.request!.id, question.id).trim()
+  || (!question.isSecret && question.options.length > 0),
+))
+
+watch(() => [props.request?.autoResolveAtIso, locallyPausedRequestId.value], ([deadline, paused], _previous, onCleanup) => {
+  if (!deadline || paused === props.request?.id) return
+  now.value = Date.now()
+  const timer = setInterval(() => { now.value = Date.now() }, 1000)
+  onCleanup(() => clearInterval(timer))
+}, { immediate: true })
+
+async function snoozeCountdown(retry = false): Promise<void> {
+  if (snoozeError.value && !retry) return
+  const request = props.request
+  if (!request?.autoResolveAtIso || snoozingRequestId.value === request.id || locallyPausedRequestId.value === request.id) return
+  snoozingRequestId.value = request.id
+  snoozeError.value = ''
+  try {
+    await snoozeUserInputRequest(request.id)
+    if (props.request?.id === request.id) locallyPausedRequestId.value = request.id
+  } catch {
+    if (props.request?.id === request.id) snoozeError.value = 'Could not pause the countdown. Please try again.'
+  } finally {
+    if (snoozingRequestId.value === request.id) snoozingRequestId.value = null
+  }
+}
+
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -453,6 +516,8 @@ watch(
     approvalFreeformText.value = ''
     toolQuestionAnswers.value = {}
     toolQuestionOtherAnswers.value = {}
+    snoozeError.value = ''
+    locallyPausedRequestId.value = null
     mcpElicitationAnswers.value = {}
     mcpElicitationValidationError.value = ''
     selectedApprovalDecision.value = approvalOptions.value[0]?.id ?? 'accept'
@@ -475,40 +540,6 @@ function toolQuestionKey(requestId: number, questionId: string): string {
   return `${String(requestId)}:${questionId}`
 }
 
-function readToolQuestions(request: UiServerRequest): ParsedToolQuestion[] {
-  const params = asRecord(request.params)
-  const questions = Array.isArray(params?.questions) ? params.questions : []
-  const parsed: ParsedToolQuestion[] = []
-
-  for (const row of questions) {
-    const question = asRecord(row)
-    if (!question) continue
-
-    const id = readString(question.id)
-    if (!id) continue
-
-    const options = Array.isArray(question.options)
-      ? question.options
-        .map((option) => asRecord(option))
-        .map((option) => ({
-          label: readString(option?.label),
-          description: readString(option?.description),
-        }))
-        .filter((option) => option.label.length > 0)
-      : []
-
-    parsed.push({
-      id,
-      header: readString(question.header),
-      question: readString(question.question),
-      isOther: question.isOther === true,
-      options,
-    })
-  }
-
-  return parsed
-}
-
 function readQuestionAnswer(requestId: number, questionId: string, fallback: string): string {
   const key = toolQuestionKey(requestId, questionId)
   const saved = toolQuestionAnswers.value[key]
@@ -521,34 +552,20 @@ function readQuestionOtherAnswer(requestId: number, questionId: string): string 
 }
 
 function onQuestionAnswerChange(requestId: number, questionId: string, value: string): void {
+  void snoozeCountdown()
   const key = toolQuestionKey(requestId, questionId)
+  toolQuestionOtherAnswers.value[key] = ''
   toolQuestionAnswers.value = {
     ...toolQuestionAnswers.value,
     [key]: value,
   }
 }
 
-function toolQuestionOptions(question: ParsedToolQuestion): Array<{ value: string; label: string }> {
-  return question.options.map((option) => ({ value: option.label, label: option.label }))
-}
-
 function onQuestionOtherAnswerInput(requestId: number, questionId: string, event: Event): void {
   const target = event.target
-  if (!(target instanceof HTMLInputElement)) return
-  const key = toolQuestionKey(requestId, questionId)
-  toolQuestionOtherAnswers.value = {
-    ...toolQuestionOtherAnswers.value,
-    [key]: target.value,
-  }
-}
-
-function selectedOptionDescription(
-  requestId: number,
-  questionId: string,
-  options: Array<{ label: string; description: string }>,
-): string {
-  const selected = readQuestionAnswer(requestId, questionId, options[0]?.label || '')
-  return options.find((option) => option.label === selected)?.description ?? ''
+  if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return
+  void snoozeCountdown()
+  toolQuestionOtherAnswers.value[toolQuestionKey(requestId, questionId)] = target.value
 }
 
 function mcpElicitationAnswerKey(requestId: number, fieldKey: string): string {
@@ -922,14 +939,14 @@ function onRespondMcpElicitation(request: UiServerRequest, action: 'accept' | 'd
 }
 
 function onRespondToolRequestUserInput(request: UiServerRequest): void {
-  const questions = readToolQuestions(request)
-  const answers: Record<string, { answers: string[] }> = {}
+  if (!canSubmitAnswers.value) return
+  const questions = readUserInputQuestions(request.params)
+  const answers: Record<string, { answers: string[] }> = Object.create(null)
 
   for (const question of questions) {
     const selected = readQuestionAnswer(request.id, question.id, question.options[0]?.label || '')
     const other = readQuestionOtherAnswer(request.id, question.id).trim()
-    const values = [selected, other].map((value) => value.trim()).filter((value) => value.length > 0)
-    answers[question.id] = { answers: values }
+    answers[question.id] = { answers: [other || selected] }
   }
 
   emit('respondServerRequest', {
@@ -1152,4 +1169,23 @@ function onRejectUnknownRequest(request: UiServerRequest): void {
   @apply border-zinc-700 bg-transparent text-zinc-300 hover:border-zinc-500 hover:bg-zinc-800;
 }
 
+.thread-pending-request-shell--questions .thread-pending-request-user-input { max-height: 60vh; overflow-y: auto; }
+.thread-pending-request-shell--questions .thread-pending-request-footer { position: sticky; bottom: 0; background: #18181b; padding-top: 0.5rem; padding-bottom: 0.25rem; }
+.thread-pending-request-answer-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border: 1px solid #3f3f46;
+  border-radius: 0.75rem;
+  cursor: pointer;
+}
+.thread-pending-request-answer-option.is-selected { background: #27272a; border-color: #a1a1aa; }
+.thread-pending-request-answer-option input { margin-top: 0.25rem; accent-color: #71717a; }
+.thread-pending-request-answer-label { font-size: 0.875rem; overflow-wrap: anywhere; }
+.thread-pending-request-answer-description { display: block; margin-top: 0.25rem; font-size: 0.75rem; color: #a1a1aa; }
+.thread-pending-request-default { margin-left: 0.5rem; font-size: 0.7rem; color: #a1a1aa; }
+.thread-pending-request-countdown { margin: 0; font-size: 0.75rem; color: #fbbf24; }
+.thread-pending-request-freeform { height: auto; min-height: 4rem; padding-top: 0.5rem; padding-bottom: 0.5rem; resize: vertical; }
+.thread-pending-request-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 </style>

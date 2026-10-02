@@ -1,3 +1,4 @@
+import { defaultUserInputResponse, userInputTimeoutMs } from '../shared/userInput.js'
 import { normalizePermissionMode, permissionModeParams, type PermissionMode } from '../shared/permissionMode'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -103,6 +104,7 @@ type PendingServerRequest = {
   method: string
   params: unknown
   receivedAtIso: string
+  autoResolveAtIso?: string | null
 }
 
 type ChatgptAuthTokensRefreshParams = {
@@ -6308,7 +6310,7 @@ const MERGEABLE_ITEM_TYPES = new Set([
   'fileChange',
 ])
 
-class AppServerProcess {
+export class AppServerProcess {
   private process: ChildProcessWithoutNullStreams | null = null
   private initialized = false
   private initializePromise: Promise<void> | null = null
@@ -6318,6 +6320,7 @@ class AppServerProcess {
   private readonly pending = new Map<number, { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }>()
   private readonly notificationListeners = new Set<(value: { method: string; params: unknown }) => void>()
   private readonly pendingServerRequests = new Map<number, PendingServerRequest>()
+  private readonly userInputTimers = new Map<number, ReturnType<typeof setTimeout>>()
   private readonly streamEventsByThreadId = new Map<string, StreamEventFrame[]>()
   private readonly lastThreadReadSnapshotByThreadId = new Map<string, unknown>()
   private readonly threadTurnPageReadCacheByThreadId = new Map<string, { result: unknown; expiresAt: number }>()
@@ -6417,7 +6420,7 @@ class AppServerProcess {
       }
 
       this.pending.clear()
-      this.pendingServerRequests.clear()
+      this.clearPendingServerRequests()
       this.process = null
       this.initialized = false
       this.initializePromise = null
@@ -6441,7 +6444,7 @@ class AppServerProcess {
       return
     }
 
-    if (typeof message.id === 'number' && this.pending.has(message.id)) {
+    if (!message.method && typeof message.id === 'number' && this.pending.has(message.id)) {
       const pendingRequest = this.pending.get(message.id)
       this.pending.delete(message.id)
 
@@ -6470,6 +6473,7 @@ class AppServerProcess {
   }
 
   private emitNotification(notification: { method: string; params: unknown }): void {
+    this.clearResolvedServerRequests(notification)
     this.recordStreamEvent(notification)
     this.captureItemFromNotification(notification)
     const nThreadId = this.extractThreadIdFromParams(notification.params)
@@ -6675,14 +6679,13 @@ class AppServerProcess {
     })
   }
 
-  private resolvePendingServerRequest(requestId: number, reply: ServerRequestReply): void {
+  private resolvePendingServerRequest(requestId: number, reply: ServerRequestReply, mode = 'manual'): void {
     const pendingRequest = this.pendingServerRequests.get(requestId)
     if (!pendingRequest) {
       throw new Error(`No pending server request found for id ${String(requestId)}`)
     }
-    this.pendingServerRequests.delete(requestId)
-
     this.sendServerRequestReply(requestId, reply)
+    this.removePendingServerRequest(requestId)
     const requestParams = asRecord(pendingRequest.params)
     const threadId =
       typeof requestParams?.threadId === 'string' && requestParams.threadId.length > 0
@@ -6694,7 +6697,7 @@ class AppServerProcess {
         id: requestId,
         method: pendingRequest.method,
         threadId,
-        mode: 'manual',
+        mode,
         resolvedAtIso: new Date().toISOString(),
       },
     })
@@ -6749,12 +6752,65 @@ class AppServerProcess {
       params,
       receivedAtIso: new Date().toISOString(),
     }
+    this.removePendingServerRequest(requestId)
     this.pendingServerRequests.set(requestId, pendingRequest)
+    const timeoutMs = method === 'item/tool/requestUserInput' ? userInputTimeoutMs(params) : null
+    if (timeoutMs !== null) {
+      pendingRequest.autoResolveAtIso = new Date(Date.now() + timeoutMs).toISOString()
+      const timer = setTimeout(() => {
+        if (this.pendingServerRequests.get(requestId) !== pendingRequest) return
+        this.resolvePendingServerRequest(requestId, { result: defaultUserInputResponse(params) }, 'automatic')
+      }, timeoutMs)
+      timer.unref()
+      this.userInputTimers.set(requestId, timer)
+    }
 
     this.emitNotification({
       method: 'server/request',
       params: pendingRequest,
     })
+  }
+
+  private removePendingServerRequest(id: number): void {
+    clearTimeout(this.userInputTimers.get(id))
+    this.userInputTimers.delete(id)
+    this.pendingServerRequests.delete(id)
+  }
+
+  private clearPendingServerRequests(): void {
+    for (const request of this.pendingServerRequests.values()) {
+      this.removePendingServerRequest(request.id)
+      this.emitNotification({ method: 'server/request/resolved', params: { id: request.id } })
+    }
+  }
+
+  private clearResolvedServerRequests(notification: { method: string; params: unknown }): void {
+    const params = asRecord(notification.params)
+    if (notification.method === 'serverRequest/resolved') {
+      const id = params?.requestId
+      if (typeof id === 'number') this.removePendingServerRequest(id)
+    } else if (notification.method === 'turn/completed' || notification.method === 'turn/started') {
+      const threadId = this.extractThreadIdFromParams(notification.params)
+      const turnId = asRecord(params?.turn)?.id ?? params?.turnId
+      for (const request of this.pendingServerRequests.values()) {
+        const requestParams = asRecord(request.params)
+        if (!threadId || requestParams?.threadId !== threadId) continue
+        if (notification.method === 'turn/completed' && requestParams?.turnId !== turnId) continue
+        this.removePendingServerRequest(request.id)
+        this.emitNotification({ method: 'server/request/resolved', params: { id: request.id, threadId } })
+      }
+    }
+  }
+
+  snoozeUserInputRequest(payload: unknown): void {
+    const id = asRecord(payload)?.id
+    if (typeof id !== 'number' || !Number.isInteger(id)) throw new Error('Invalid server request id')
+    const request = this.pendingServerRequests.get(id)
+    if (!request || request.method !== 'item/tool/requestUserInput' || !request.autoResolveAtIso) return
+    clearTimeout(this.userInputTimers.get(id))
+    this.userInputTimers.delete(id)
+    request.autoResolveAtIso = null
+    this.emitNotification({ method: 'server/request', params: { ...request } })
   }
 
   private async call(method: string, params: unknown): Promise<unknown> {
@@ -6818,8 +6874,6 @@ class AppServerProcess {
   }
 
   async respondToServerRequest(payload: unknown): Promise<void> {
-    await this.ensureInitialized()
-
     const body = asRecord(payload)
     if (!body) {
       throw new Error('Invalid response payload: expected object')
@@ -6854,6 +6908,7 @@ class AppServerProcess {
   }
 
   dispose(): void {
+    this.clearPendingServerRequests()
     if (!this.process) return
 
     const proc = this.process
@@ -6869,7 +6924,6 @@ class AppServerProcess {
       request.reject(failure)
     }
     this.pending.clear()
-    this.pendingServerRequests.clear()
 
     try {
       proc.stdin.end()
@@ -8427,7 +8481,18 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
       if (req.method === 'POST' && url.pathname === '/codex-api/server-requests/respond') {
         const payload = await readJsonBody(req)
+        const id = asRecord(payload)?.id
+        if (typeof id === 'number' && !appServer.listPendingServerRequests().some((request) => request.id === id)) {
+          setJson(res, 409, { error: 'This request has already been resolved.' })
+          return
+        }
         await appServer.respondToServerRequest(payload)
+        setJson(res, 200, { ok: true })
+        return
+      }
+
+      if (req.method === 'POST' && url.pathname === '/codex-api/server-requests/snooze') {
+        appServer.snoozeUserInputRequest(await readJsonBody(req))
         setJson(res, 200, { ok: true })
         return
       }

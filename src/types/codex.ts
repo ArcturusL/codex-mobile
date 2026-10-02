@@ -231,6 +231,7 @@ export type UiServerRequest = {
   turnId: string
   itemId: string
   receivedAtIso: string
+  autoResolveAtIso?: string | null
   params: unknown
 }
 
