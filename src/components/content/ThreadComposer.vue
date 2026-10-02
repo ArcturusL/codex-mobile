@@ -442,7 +442,7 @@ import IconTablerMinimize from '../icons/IconTablerMinimize.vue'
 import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
 import ComposerSearchDropdown from './ComposerSearchDropdown.vue'
-import { findComposerInlineTrigger } from './composerInlineTrigger'
+import { filterComposerSlashSuggestions, findComposerInlineTrigger } from './composerInlineTrigger'
 
 type SkillSourceBadge = {
   badge: string
@@ -711,9 +711,7 @@ const slashSuggestions = computed<SlashSuggestion[]>(() => {
       kind: 'skill' as const,
       value: skill.path,
     }))
-  return [...commands, ...prompts, ...skills].filter((item) => (
-    !query || item.label.slice(1).toLowerCase().startsWith(query) || item.description.toLowerCase().includes(query)
-  ))
+  return filterComposerSlashSuggestions([...commands, ...prompts, ...skills], query)
 })
 
 const canSubmit = computed(() => {

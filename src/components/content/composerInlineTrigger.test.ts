@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { findComposerInlineTrigger } from './composerInlineTrigger'
+import { filterComposerSlashSuggestions, findComposerInlineTrigger } from './composerInlineTrigger'
+
+describe('filterComposerSlashSuggestions', () => {
+  it('puts title matches before description matches without reordering ties or duplicating results', () => {
+    const docx = { label: '/docx', description: 'Create polished Word documents' }
+    const mention = { label: '/mention', description: 'Mention a file' }
+    const ponytail = { label: '/ponytail', description: 'Supports minimal solutions' }
+    const poetry = { label: '/poetry', description: 'Write verses' }
+    const report = { label: '/report', description: 'Prepare reports' }
+    const items = [docx, mention, ponytail, poetry, report]
+    expect(filterComposerSlashSuggestions(items, ' PO ')).toEqual([ponytail, poetry, docx, report])
+    expect(filterComposerSlashSuggestions(items, '')).toEqual(items)
+    expect(filterComposerSlashSuggestions(items, 'polished')).toEqual([docx])
+    expect(filterComposerSlashSuggestions(items, 'missing')).toEqual([])
+    expect(items).toEqual([docx, mention, ponytail, poetry, report])
+  })
+})
 
 describe('findComposerInlineTrigger', () => {
   it('finds file mentions after whitespace and preserves path queries', () => {
