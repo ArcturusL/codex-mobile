@@ -1,8 +1,8 @@
-# Codex TUI version and updates
+# Codex CLI version and updates
 
 Setup: use an isolated `CODEX_HOME`, a free localhost port, Node/npm in PATH, and an installed Codex CLI. Use the packaged server with a password for authentication checks. Do not test installation against production data.
 
-1. Open Settings in Chinese and English, in light and dark themes. The Codex TUI section shows the installed version separately from the WebUI version, latest stable version, last successful check, and the six-hour schedule.
+1. Open Settings in Chinese and English, in light and dark themes. The Codex CLI section shows the installed version separately from the WebUI version, latest stable version, last successful check, and the six-hour schedule.
 2. Click Check for updates. Network checks are shared and throttled for one minute; background checks run every six hours even while Settings is closed. A registry failure must remain visible without losing the installed version or the last successful check time.
 3. With a newer stable release available, click Update now. The button disables, progress appears, and the request returns immediately while npm installs in the background. Close and reopen Settings or refresh: the same job remains visible. Simultaneous requests must not start multiple npm processes. A newer installed/prerelease version must never be downgraded to an older stable version.
 4. The downloaded version must pass `--version` verification before `CODEX_HOME/codexui-runtime/current.json` changes. Successful installation shows the new installed version and a service-restart notice; running conversations stay alive. After restarting the isolated WebUI, its CLI/app-server resolver selects the managed installation and the notice disappears. This updater controls the Codex used by the WebUI; it does not replace a system-wide terminal command.

@@ -28,7 +28,7 @@ async function readVersion(command: string): Promise<string> {
   const invocation = getSpawnInvocation(command, ['--version'])
   const { stdout } = await exec(invocation.command, invocation.args, { timeout: 10_000, maxBuffer: 4096, windowsHide: true })
   const match = /^codex-cli\s+(\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?)\s*$/.exec(stdout.trim())
-  if (!match) throw new Error('Could not read the Codex TUI version.')
+  if (!match) throw new Error('Could not read the Codex CLI version.')
   return match[1]!
 }
 
@@ -51,7 +51,7 @@ export function createCodexUpdater() {
     checking = (async () => {
       try {
         command ??= resolveCodexCommand()
-        if (!command) throw new Error('Codex TUI is not installed.')
+        if (!command) throw new Error('Codex CLI is not installed.')
         if (!status.restartRequired) status.currentVersion = await readVersion(command)
         const response = await fetch(`${REGISTRY}/@openai%2fcodex/latest`, { signal: AbortSignal.timeout(15_000) })
         if (!response.ok) throw new Error('Could not check for Codex updates. Try again later.')

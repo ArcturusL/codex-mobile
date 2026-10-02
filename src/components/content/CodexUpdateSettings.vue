@@ -1,7 +1,7 @@
 <template>
-  <section class="codex-update-settings" aria-label="Codex TUI">
+  <section class="codex-update-settings" aria-label="Codex CLI">
     <div class="codex-update-heading">
-      <strong>Codex TUI</strong>
+      <strong>Codex CLI</strong>
       <span>{{ status?.currentVersion ? `v${status.currentVersion}` : t('Version unknown') }}</span>
     </div>
     <p v-if="status?.latestVersion">{{ t('Latest stable version') }}: v{{ status.latestVersion }}</p>
