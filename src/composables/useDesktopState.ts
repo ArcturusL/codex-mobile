@@ -1482,6 +1482,8 @@ export function useDesktopState() {
   const threadModelProviderByThreadId = ref<Record<string, string>>({})
 
   const threadTitleById = ref<Record<string, string>>({})
+  const generatingThreadTitles = new Set<string>()
+  const renamingThreadIds = new Set<string>()
 
   const installedSkills = ref<SkillInfo[]>([])
   const accountRateLimitSnapshots = ref<UiRateLimitSnapshot[]>([])
@@ -3824,6 +3826,10 @@ export function useDesktopState() {
       isUnsupportedChatGptModelError(new Error(turnErrorMessage))
     if (completedTurn) {
       const pendingTurnRequest = pendingTurnRequestByThreadId.value[completedTurn.threadId]
+      const status = readString(asRecord(asRecord(notification.params)?.turn)?.status)
+      if (status === 'completed' && !turnErrorMessage) {
+        void requestThreadTitleGeneration(completedTurn.threadId, pendingTurnRequest?.text ?? '')
+      }
       const startedTurnState = pendingTurnStartsById.get(completedTurn.turnId)
       if (startedTurnState) {
         pendingTurnStartsById.delete(completedTurn.turnId)
@@ -3903,6 +3909,11 @@ export function useDesktopState() {
       })
     }
 
+    const completedAgentMessage = readAgentMessageCompleted(notification)
+    if (notificationThreadId && completedAgentMessage) {
+      upsertLiveAgentMessage(notificationThreadId, completedAgentMessage)
+    }
+
     if (!notificationThreadId || notificationThreadId !== selectedThreadId.value) return
 
     const startedAgentMessageId = readAgentMessageStartedId(notification)
@@ -3921,11 +3932,6 @@ export function useDesktopState() {
         text: nextText,
         messageType: 'agentMessage.live',
       })
-    }
-
-    const completedAgentMessage = readAgentMessageCompleted(notification)
-    if (completedAgentMessage) {
-      upsertLiveAgentMessage(notificationThreadId, completedAgentMessage)
     }
 
     const completedImageView = readCompletedImageView(notification)
@@ -4126,19 +4132,35 @@ export function useDesktopState() {
     }
   }
 
-  async function requestThreadTitleGeneration(threadId: string, prompt: string, cwd: string | null): Promise<void> {
-    if (threadTitleById.value[threadId]) return
-    const trimmed = prompt.trim()
-    if (!trimmed) return
-    const truncated = trimmed.length > 300 ? trimmed.slice(0, 300) : trimmed
+  async function requestThreadTitleGeneration(threadId: string, fallbackPrompt: string): Promise<void> {
+    if (threadTitleById.value[threadId] || generatingThreadTitles.has(threadId) || renamingThreadIds.has(threadId)) return
+    const thread = flattenThreads(sourceGroups.value).find((row) => row.id === threadId)
+    if (!thread) return
+    const persisted = persistedMessagesByThreadId.value[threadId] ?? []
+    const userText = persisted.find((message) => message.role === 'user' && message.text.trim())?.text || fallbackPrompt
+    const assistantText = [...persisted, ...(liveAgentMessagesByThreadId.value[threadId] ?? [])]
+      .filter((message) => message.role === 'assistant' && message.messageType?.startsWith('agentMessage'))
+      .at(-1)?.text ?? ''
+    if (!userText.trim() && !assistantText.trim()) return
+    const prompt = `User: ${userText.trim().slice(0, 2000)}\nAssistant: ${assistantText.trim().slice(0, 2000)}`
+    generatingThreadTitles.add(threadId)
     try {
-      const title = await generateThreadTitle(truncated, cwd)
-      if (!title || threadTitleById.value[threadId]) return
+      const title = await generateThreadTitle(prompt, thread.cwd || null, {
+        threadId,
+        model: readModelIdForThread(threadId),
+        modelProvider: readProviderIdForThread(threadId),
+      })
+      if (!title || threadTitleById.value[threadId] || renamingThreadIds.has(threadId)) return
+      if (!flattenThreads(sourceGroups.value).some((row) => row.id === threadId)) return
+      await renameThread(threadId, title)
+      if (threadTitleById.value[threadId] || renamingThreadIds.has(threadId)) return
       threadTitleById.value = { ...threadTitleById.value, [threadId]: title }
       applyThreadFlags()
-      void persistThreadTitle(threadId, title)
+      await persistThreadTitle(threadId, title)
     } catch {
       // Title generation is best-effort.
+    } finally {
+      generatingThreadTitles.delete(threadId)
     }
   }
 
@@ -4710,6 +4732,7 @@ export function useDesktopState() {
     const normalizedName = threadName.trim()
     if (!threadId || !normalizedName) return
 
+    renamingThreadIds.add(threadId)
     try {
       await renameThread(threadId, normalizedName)
       threadTitleById.value = { ...threadTitleById.value, [threadId]: normalizedName }
@@ -4717,6 +4740,8 @@ export function useDesktopState() {
       void persistThreadTitle(threadId, normalizedName)
     } catch (unknownError) {
       error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
+    } finally {
+      renamingThreadIds.delete(threadId)
     }
   }
 
@@ -5029,9 +5054,6 @@ export function useDesktopState() {
       )
       setTurnErrorForThread(threadId, null)
       setThreadInProgress(threadId, true)
-      const capturedThreadId = threadId
-      const capturedCwd = targetCwd || null
-      const capturedPrompt = nextText
       void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode)
         .catch((unknownError) => {
           shouldAutoScrollOnNextAgentEvent = false
@@ -5044,7 +5066,6 @@ export function useDesktopState() {
         .finally(() => {
           isSendingMessage.value = false
         })
-      void requestThreadTitleGeneration(capturedThreadId, capturedPrompt, capturedCwd)
       return threadId
     } catch (unknownError) {
       shouldAutoScrollOnNextAgentEvent = false

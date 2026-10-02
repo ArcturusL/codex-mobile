@@ -8,6 +8,7 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
+| [Automatic conversation titles](automatic-conversation-titles.md) |
 | [Pinned threads remain visible during background pagination](pinned-threads-remain-visible-during-background-pagination.md) |
 | [Thread archive recovery and sidebar pruning](thread-archive-recovery-and-sidebar-pruning.md) |
 | [Unread thread cutoff state](unread-thread-cutoff-state.md) |
