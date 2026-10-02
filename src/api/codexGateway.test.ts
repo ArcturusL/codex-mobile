@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getAvailableModelIds, getThreadDetail, listDirectoryComposioConnectors, resumeThread, startThreadTurn } from './codexGateway'
+import { getAvailableModelIds, getThreadDetail, listDirectoryComposioConnectors, resumeThread, startThreadTurn, getThreadQueueState, setThreadQueueState } from './codexGateway'
 
 function mockRpcFetch(): { requests: Array<{ method: string, params: Record<string, unknown> }> } {
   const requests: Array<{ method: string, params: Record<string, unknown> }> = []
@@ -260,4 +260,39 @@ describe('resumeThread', () => {
       { method: 'thread/resume', params: { threadId: 'stalled-thread' } },
     ])
   })
+})
+
+
+describe('turn permission overrides', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('resets approval and reviewer settings when leaving full access or auto-review', async () => {
+    const { requests } = mockRpcFetch()
+    for (const mode of ['full-access', 'auto-review', 'default', 'read-only'] as const) {
+      await startThreadTurn('thread-1', 'hello', [], undefined, undefined, undefined, [], undefined, mode)
+    }
+    expect(requests.map(({ params }) => [params.approvalPolicy, params.approvalsReviewer, params.sandboxPolicy])).toEqual([
+      ['never', 'user', { type: 'dangerFullAccess' }],
+      ['on-request', 'auto_review', { type: 'workspaceWrite', writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }],
+      ['on-request', 'user', { type: 'workspaceWrite', writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }],
+      ['on-request', 'user', { type: 'readOnly', networkAccess: false }],
+    ])
+    await startThreadTurn('untouched-thread', 'hello')
+    expect(requests[4].params).not.toHaveProperty('approvalPolicy')
+    expect(requests[4].params).not.toHaveProperty('sandboxPolicy')
+  })
+})
+
+
+it('keeps permission snapshots through queue write/read normalization', async () => {
+  let stored: unknown
+  vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init?: RequestInit) => {
+    if (init?.method === 'PUT') stored = JSON.parse(String(init.body))
+    return new Response(JSON.stringify({ data: stored }), { status: 200 })
+  }))
+  try {
+    const queue = { 'thread-queue': [{ id: 'q', text: 'inspect', imageUrls: [], skills: [], fileAttachments: [], collaborationMode: 'default' as const, permissionMode: 'auto-review' as const }] }
+    await setThreadQueueState(queue)
+    expect(await getThreadQueueState()).toEqual(queue)
+  } finally { vi.unstubAllGlobals() }
 })

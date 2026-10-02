@@ -417,3 +417,24 @@ describe('automation TOML handling', () => {
     expect(toAutomationApiRecord(automation as NonNullable<typeof automation>)).not.toHaveProperty('extraTomlLines')
   })
 })
+
+
+describe('backend queue permissions', () => {
+  it('applies the captured mode even when collaboration settings are unavailable', async () => {
+    const processor = new BackendQueueProcessor({
+      onNotification: () => () => undefined,
+      rpc: vi.fn().mockRejectedValue(new Error('unavailable')),
+    } as never)
+    try {
+      const params = await (processor as unknown as {
+        buildQueuedTurnParams: (turn: unknown) => Promise<Record<string, unknown>>
+      }).buildQueuedTurnParams({
+        threadId: 'queued-thread',
+        message: { id: 'q-1', text: 'inspect', imageUrls: [], skills: [], fileAttachments: [], collaborationMode: 'default', permissionMode: 'auto-review' },
+      })
+      expect(params.approvalPolicy).toBe('on-request')
+      expect(params.approvalsReviewer).toBe('auto_review')
+      expect(params.sandboxPolicy).toMatchObject({ type: 'workspaceWrite', networkAccess: false })
+    } finally { processor.dispose() }
+  })
+})

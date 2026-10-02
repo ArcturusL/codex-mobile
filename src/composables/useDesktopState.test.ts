@@ -1,3 +1,4 @@
+import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildWorkspaceRootsProjectOrderState,
@@ -1193,5 +1194,41 @@ describe('findAdjacentThreadId', () => {
 
   it('returns no fallback when there is no adjacent thread', () => {
     expect(findAdjacentThreadId([thread('selected-thread', '/tmp/project')], 'selected-thread')).toBe('')
+  })
+})
+
+
+describe('composer permissions', () => {
+  it('isolates thread choices and restores them after reload without extra RPCs', async () => {
+    installTestWindow()
+    const state = useDesktopState()
+    state.primeSelectedThread('permission-a')
+    state.setSelectedPermissionMode('auto-review')
+    state.primeSelectedThread('permission-b')
+    expect(state.selectedPermissionMode.value).toBeUndefined()
+    state.setSelectedPermissionMode('read-only')
+    state.setSelectedPermissionMode('invalid')
+    await nextTick()
+    const reloaded = useDesktopState()
+    reloaded.primeSelectedThread('permission-a')
+    expect(reloaded.selectedPermissionMode.value).toBe('auto-review')
+    reloaded.primeSelectedThread('permission-b')
+    expect(reloaded.selectedPermissionMode.value).toBe('read-only')
+    expect(gatewayMocks.startThreadTurn).not.toHaveBeenCalled()
+  })
+
+  it('carries new-thread permissions into its first turn and persisted queue', async () => {
+    installTestWindow()
+    gatewayMocks.startThread.mockResolvedValue({ threadId: 'permissions-new', model: 'gpt-5.5', modelProvider: 'openai' })
+    gatewayMocks.startThreadTurn.mockImplementation(() => new Promise(() => {}))
+    gatewayMocks.setThreadQueueState.mockResolvedValue(undefined)
+    const state = useDesktopState()
+    state.setSelectedPermissionMode('read-only')
+    await state.sendMessageToNewThread('inspect project', '/tmp/project')
+    expect(gatewayMocks.startThreadTurn.mock.calls.at(-1)?.[8]).toBe('read-only')
+    expect(state.selectedPermissionMode.value).toBe('read-only')
+    await state.sendMessageToSelectedThread('next inspection', [], [], 'queue')
+    const saved = gatewayMocks.setThreadQueueState.mock.calls.at(-1)?.[0]
+    expect(saved['permissions-new'][0].permissionMode).toBe('read-only')
   })
 })

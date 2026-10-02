@@ -320,6 +320,16 @@
             :disabled="isComposerConfigDisabled"
             @update:model-value="onReasoningEffortSelect"
           />
+          <ComposerDropdown
+            class="thread-composer-control thread-composer-permissions"
+            :model-value="selectedPermissionMode || ''"
+            :options="PERMISSION_MODES.map((mode) => ({ value: mode.value, label: t(mode.label) }))"
+            :placeholder="t('Permissions')"
+            :title="t('Permissions apply to the next turn. Unselected keeps the current session settings.')"
+            open-direction="up"
+            :disabled="isComposerConfigDisabled || isTurnInProgress"
+            @update:model-value="onPermissionModeSelect"
+          />
         </template>
 
         <div
@@ -415,6 +425,7 @@
 </template>
 
 <script setup lang="ts">
+import { PERMISSION_MODES, normalizePermissionMode, type PermissionMode } from '../../shared/permissionMode'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   CollaborationModeKind,
@@ -474,6 +485,7 @@ const props = defineProps<{
   selectedCollaborationMode: CollaborationModeKind
   models: string[]
   selectedModel: string
+  selectedPermissionMode?: PermissionMode
   selectedReasoningEffort: ReasoningEffort | ''
   selectedSpeedMode: SpeedMode
   skills?: SkillItem[]
@@ -521,9 +533,14 @@ const emit = defineEmits<{
   'update:selected-collaboration-mode': [mode: CollaborationModeKind]
   'update:selected-model': [modelId: string]
   'update:selected-reasoning-effort': [effort: ReasoningEffort | '']
+  'update:selected-permission-mode': [mode: PermissionMode]
   'update:selected-speed-mode': [mode: SpeedMode]
 }>()
 const { t } = useUiLanguage()
+function onPermissionModeSelect(value: string): void {
+  const mode = normalizePermissionMode(value)
+  if (mode) emit('update:selected-permission-mode', mode)
+}
 
 type SelectedImage = {
   id: string

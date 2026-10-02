@@ -1,3 +1,4 @@
+import { normalizePermissionMode, permissionModeParams, type PermissionMode } from '../shared/permissionMode'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rename, rm, mkdir, stat, cp, lstat, readlink, symlink, realpath, utimes } from 'node:fs/promises'
@@ -5526,6 +5527,7 @@ const FIRST_LAUNCH_PLUGINS_CARD_DISMISSED_KEY = 'first-launch-plugins-card-dismi
 const THREAD_QUEUE_STATE_KEY = 'thread-queue-state'
 
 type StoredQueuedMessage = {
+  permissionMode?: PermissionMode
   id: string
   text: string
   imageUrls: string[]
@@ -5587,6 +5589,7 @@ function normalizeStoredQueuedMessage(value: unknown): StoredQueuedMessage | nul
     imageUrls: normalizeStringArray(record.imageUrls),
     skills: normalizeNamedPathItems(record.skills),
     fileAttachments: normalizeFileAttachments(record.fileAttachments),
+    ...(normalizePermissionMode(record.permissionMode) ? { permissionMode: normalizePermissionMode(record.permissionMode) } : {}),
     collaborationMode: record.collaborationMode === 'plan' ? 'plan' : 'default',
   }
 }
@@ -7170,6 +7173,7 @@ export class BackendQueueProcessor {
     const params: Record<string, unknown> = {
       threadId: turn.threadId,
       input,
+      ...permissionModeParams(turn.message.permissionMode),
     }
     if (dedupedFileAttachments.length > 0) {
       params.attachments = dedupedFileAttachments.map((f) => ({ label: f.label, path: f.path, fsPath: f.fsPath }))

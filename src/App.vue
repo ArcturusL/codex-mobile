@@ -945,6 +945,7 @@
                   :collaboration-modes="availableCollaborationModes"
                   :selected-collaboration-mode="selectedCollaborationMode"
                   :models="availableModelIds" :selected-model="composerSelectedModelId"
+                  :selected-permission-mode="selectedPermissionMode"
                   :selected-reasoning-effort="selectedReasoningEffort"
                   :selected-speed-mode="selectedSpeedMode"
                   :is-updating-speed-mode="isUpdatingSpeedMode"
@@ -959,6 +960,7 @@
                   @submit="onSubmitThreadMessage"
                   @update:selected-collaboration-mode="onSelectCollaborationMode"
                   @update:selected-model="onSelectModel"
+                  @update:selected-permission-mode="setSelectedPermissionMode"
                   @update:selected-reasoning-effort="onSelectReasoningEffort"
                   @update:selected-speed-mode="onSelectSpeedMode" />
               </div>
@@ -1028,6 +1030,7 @@
                     :selected-collaboration-mode="selectedCollaborationMode"
                     :models="availableModelIds"
                     :selected-model="composerSelectedModelId"
+                    :selected-permission-mode="selectedPermissionMode"
                     :selected-reasoning-effort="selectedReasoningEffort"
                     :selected-speed-mode="selectedSpeedMode"
                     :is-updating-speed-mode="isUpdatingSpeedMode"
@@ -1043,6 +1046,7 @@
                     :dictation-language="dictationLanguage"
                     @update:selected-collaboration-mode="onSelectCollaborationMode"
                     @submit="onSubmitThreadMessage" @update:selected-model="onSelectModel"
+                    @update:selected-permission-mode="setSelectedPermissionMode"
                     @update:selected-reasoning-effort="onSelectReasoningEffort"
                     @update:selected-speed-mode="onSelectSpeedMode"
                     @interrupt="onInterruptTurn" />
@@ -1420,6 +1424,8 @@ const {
   availableModelIds,
   selectedCollaborationMode,
   selectedModelId,
+  selectedPermissionMode,
+  setSelectedPermissionMode,
   selectedReasoningEffort,
   selectedSpeedMode,
   codexCliMissingError,

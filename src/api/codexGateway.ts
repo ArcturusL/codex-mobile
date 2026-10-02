@@ -1,3 +1,4 @@
+import { normalizePermissionMode, permissionModeParams, type PermissionMode } from '../shared/permissionMode'
 import {
   fetchRpcMethodCatalog,
   fetchRpcNotificationCatalog,
@@ -284,6 +285,7 @@ let workspaceRootsStatePromise: Promise<WorkspaceRootsState> | null = null
 let cachedWorkspaceRootsState: WorkspaceRootsState | null = null
 
 export type StoredQueuedMessage = {
+  permissionMode?: PermissionMode
   id: string
   text: string
   imageUrls: string[]
@@ -1842,6 +1844,7 @@ export async function startThreadTurn(
   skills?: Array<{ name: string; path: string }>,
   fileAttachments: FileAttachmentParam[] = [],
   collaborationMode?: CollaborationModeKind,
+  permissionMode?: PermissionMode,
 ): Promise<string> {
   try {
     const normalizedModel = model?.trim() ?? ''
@@ -1886,6 +1889,7 @@ export async function startThreadTurn(
     const params: Record<string, unknown> = {
       threadId,
       input,
+      ...permissionModeParams(permissionMode),
     }
     if (attachments.length > 0) params.attachments = attachments
     if (normalizedModel) {
@@ -2557,6 +2561,7 @@ function normalizeStoredQueuedMessage(value: unknown): StoredQueuedMessage | nul
     imageUrls,
     skills,
     fileAttachments,
+    ...(normalizePermissionMode(record.permissionMode) ? { permissionMode: normalizePermissionMode(record.permissionMode) } : {}),
     collaborationMode: record.collaborationMode === 'plan' ? 'plan' : 'default',
   }
 }

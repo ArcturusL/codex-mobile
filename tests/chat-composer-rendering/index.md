@@ -42,3 +42,5 @@ Return to the [manual test index](../../tests.md).
 | [First user message is visible immediately in new chats](first-user-message-is-visible-immediately-in-new-chats.md) |
 | [New chat live thinking and stop controls](new-chat-live-thinking-and-stop-controls.md) |
 | [Bold URL trailing punctuation parsing](bold-url-trailing-punctuation-parsing.md) |
+
+- [Composer review mode and access permissions](composer-permissions.md)

@@ -1,10 +1,12 @@
 <template>
-  <div ref="rootRef" class="composer-dropdown">
+  <div ref="rootRef" class="composer-dropdown" @keydown.esc.stop.prevent="onEscapeSearch">
     <button
       class="composer-dropdown-trigger"
       type="button"
       :title="triggerAccessibleLabel"
       :aria-label="triggerAccessibleLabel"
+      :aria-expanded="isOpen"
+      aria-haspopup="listbox"
       :disabled="disabled"
       @click="onToggle"
     >
@@ -31,7 +33,7 @@
             class="composer-dropdown-search-input"
             type="text"
             :placeholder="searchPlaceholderText"
-            @keydown.esc.prevent="onEscapeSearch"
+            @keydown.esc.stop.prevent="onEscapeSearch"
           />
         </div>
 

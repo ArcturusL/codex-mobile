@@ -1,4 +1,5 @@
-import { computed, ref } from 'vue'
+import { normalizePermissionMode, type PermissionMode } from '../shared/permissionMode'
+import { computed, ref, watch } from 'vue'
 import {
 
   archiveThread,
@@ -1402,6 +1403,7 @@ export function useDesktopState() {
   const inProgressById = ref<Record<string, boolean>>({})
   type FileAttachment = { label: string; path: string; fsPath: string }
   type QueuedMessage = {
+    permissionMode?: PermissionMode
     id: string
     text: string
     imageUrls: string[]
@@ -1410,6 +1412,7 @@ export function useDesktopState() {
     collaborationMode: CollaborationModeKind
   }
   type PendingTurnRequest = {
+    permissionMode?: PermissionMode
     text: string
     imageUrls: string[]
     skills: Array<{ name: string; path: string }>
@@ -1435,6 +1438,21 @@ export function useDesktopState() {
     readSelectedCollaborationMode(selectedCollaborationModeByContext.value, selectedThreadId.value),
   )
   const selectedModelId = ref(readSelectedModel(selectedModelIdByContext.value, selectedThreadId.value))
+  const permissionModes = ref<Record<string, PermissionMode>>((() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem('composer-permission-modes') || '{}')
+      return Object.fromEntries(Object.entries(stored).filter(([, value]) => normalizePermissionMode(value))) as Record<string, PermissionMode>
+    } catch { return {} }
+  })())
+  const selectedPermissionMode = computed(() => permissionModes.value[selectedThreadId.value || NEW_THREAD_COLLABORATION_MODE_CONTEXT])
+  function setSelectedPermissionMode(value: string): void {
+    const mode = normalizePermissionMode(value)
+    if (!mode) return
+    permissionModes.value = { ...permissionModes.value, [selectedThreadId.value || NEW_THREAD_COLLABORATION_MODE_CONTEXT]: mode }
+  }
+  watch(permissionModes, (value) => {
+    try { window.localStorage.setItem('composer-permission-modes', JSON.stringify(value)) } catch { /* Keep the in-memory selection. */ }
+  })
   const selectedReasoningEffort = ref<ReasoningEffort | ''>('medium')
   const selectedSpeedMode = ref<SpeedMode>('standard')
   const activeProviderId = ref('')
@@ -1909,6 +1927,7 @@ export function useDesktopState() {
         pending.skills.length > 0 ? pending.skills : undefined,
         pending.fileAttachments,
         pending.collaborationMode,
+        ...(pending.permissionMode ? [pending.permissionMode] as const : []),
       )
 
       scheduleRateLimitRefresh()
@@ -4192,6 +4211,7 @@ export function useDesktopState() {
           fsPath: attachment.fsPath,
         })),
         collaborationMode: message.collaborationMode,
+        ...(message.permissionMode ? { permissionMode: message.permissionMode } : {}),
       }))
     }
     return next
@@ -4866,6 +4886,7 @@ export function useDesktopState() {
         ? Math.max(0, Math.min(queueInsertIndex, nextQueue.length))
         : nextQueue.length
       nextQueue.splice(insertIndex, 0, {
+        ...(selectedPermissionMode.value ? { permissionMode: selectedPermissionMode.value } : {}),
         id,
         text: nextText,
         imageUrls,
@@ -4956,6 +4977,7 @@ export function useDesktopState() {
     const targetCwd = cwd.trim()
     const selectedModel = readModelIdForThread(NEW_THREAD_COLLABORATION_MODE_CONTEXT).trim()
     const selectedMode = selectedCollaborationMode.value
+    const permissionMode = selectedPermissionMode.value
     if (!nextText && imageUrls.length === 0 && fileAttachments.length === 0) return ''
 
     isSendingMessage.value = true
@@ -4982,6 +5004,7 @@ export function useDesktopState() {
         }
       }
       if (!threadId) return ''
+      if (permissionMode) permissionModes.value = { ...permissionModes.value, [threadId]: permissionMode }
 
       insertOptimisticThread(threadId, targetCwd, nextText || '[Image]')
       appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments)
@@ -5047,6 +5070,7 @@ export function useDesktopState() {
     fileAttachments: FileAttachment[] = [],
     collaborationModeOverride?: CollaborationModeKind,
   ): Promise<void> {
+    const permissionMode = permissionModes.value[threadId]
     const reasoningEffort = selectedReasoningEffort.value
     const collaborationMode = collaborationModeOverride === 'plan' ? 'plan' : collaborationModeOverride === 'default'
       ? 'default'
@@ -5072,6 +5096,7 @@ export function useDesktopState() {
       fileAttachments: normalizedFileAttachments,
       effort: reasoningEffort,
       collaborationMode,
+      permissionMode,
       fallbackRetried: false,
     })
 
@@ -5102,6 +5127,7 @@ export function useDesktopState() {
           skills.length > 0 ? skills : undefined,
           fileAttachments,
           collaborationMode,
+          ...(permissionMode ? [permissionMode] as const : []),
         )
       } catch (unknownError) {
         if (modelId && modelId !== MODEL_FALLBACK_ID && isUnsupportedChatGptModelError(unknownError)) {
@@ -5113,6 +5139,7 @@ export function useDesktopState() {
             fileAttachments: normalizedFileAttachments,
             effort: reasoningEffort,
             collaborationMode,
+            permissionMode,
             fallbackRetried: true,
           })
           startedTurnId = await startThreadTurn(
@@ -5124,6 +5151,7 @@ export function useDesktopState() {
             skills.length > 0 ? skills : undefined,
             fileAttachments,
             collaborationMode,
+            ...(permissionMode ? [permissionMode] as const : []),
           )
         } else {
           throw unknownError
@@ -5654,6 +5682,7 @@ export function useDesktopState() {
     if (!msg) return
     removeQueuedMessage(messageId)
     setSelectedCollaborationMode(msg.collaborationMode)
+    if (msg.permissionMode) setSelectedPermissionMode(msg.permissionMode)
     void sendMessageToSelectedThread(msg.text, msg.imageUrls, msg.skills, 'steer', msg.fileAttachments)
   }
 
@@ -5676,6 +5705,8 @@ export function useDesktopState() {
     availableModelIds,
     selectedCollaborationMode,
     selectedModelId,
+    selectedPermissionMode,
+    setSelectedPermissionMode,
     selectedReasoningEffort,
     selectedSpeedMode,
     codexCliMissingError,
