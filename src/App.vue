@@ -49,7 +49,7 @@
           </div>
 
           <button
-            v-if="!isSidebarCollapsed"
+            v-if="!isSidebarCollapsed && showSkillsTab"
             class="sidebar-skills-link"
             :class="{ 'is-active': isSkillsRoute }"
             type="button"
@@ -65,7 +65,7 @@
           </button>
 
           <button
-            v-if="!isSidebarCollapsed"
+            v-if="!isSidebarCollapsed && showAutomationsTab"
             class="sidebar-skills-link"
             :class="{ 'is-active': isAutomationsRoute }"
             type="button"
@@ -228,6 +228,14 @@
               <button class="sidebar-settings-row" type="button" :title="SETTINGS_HELP.inProgressSendMode" @click="cycleInProgressSendMode">
                 <span class="sidebar-settings-label">{{ t('When busy, send as') }}</span>
                 <span class="sidebar-settings-value">{{ inProgressSendMode === 'steer' ? t('Steer') : t('Queue') }}</span>
+              </button>
+              <button class="sidebar-settings-row" type="button" role="switch" :aria-checked="showSkillsTab" @click="showSkillsTab = !showSkillsTab">
+                <span class="sidebar-settings-label">{{ t('Show Skills tab') }}</span>
+                <span class="sidebar-settings-toggle" :class="{ 'is-on': showSkillsTab }" aria-hidden="true" />
+              </button>
+              <button class="sidebar-settings-row" type="button" role="switch" :aria-checked="showAutomationsTab" @click="showAutomationsTab = !showAutomationsTab">
+                <span class="sidebar-settings-label">{{ t('Show Automations tab') }}</span>
+                <span class="sidebar-settings-toggle" :class="{ 'is-on': showAutomationsTab }" aria-hidden="true" />
               </button>
               <button class="sidebar-settings-row" type="button" :title="SETTINGS_HELP.appearance" @click="cycleDarkMode">
                 <span class="sidebar-settings-label">{{ t('Appearance') }}</span>
@@ -1622,6 +1630,12 @@ const DICTATION_LANGUAGE_KEY = 'codex-web-local.dictation-language.v1'
 
 const CHAT_WIDTH_KEY = 'codex-web-local.chat-width.v1'
 const MOBILE_RESUME_RELOAD_MIN_HIDDEN_MS = 400
+const SHOW_SKILLS_TAB_KEY = 'codex-web-local.show-skills-tab.v1'
+const SHOW_AUTOMATIONS_TAB_KEY = 'codex-web-local.show-automations-tab.v1'
+const showSkillsTab = ref(loadBoolPref(SHOW_SKILLS_TAB_KEY, true))
+const showAutomationsTab = ref(loadBoolPref(SHOW_AUTOMATIONS_TAB_KEY, true))
+watch(showSkillsTab, (value) => window.localStorage.setItem(SHOW_SKILLS_TAB_KEY, value ? '1' : '0'))
+watch(showAutomationsTab, (value) => window.localStorage.setItem(SHOW_AUTOMATIONS_TAB_KEY, value ? '1' : '0'))
 const sendWithEnter = ref(loadBoolPref(SEND_WITH_ENTER_KEY, true))
 const inProgressSendMode = ref<'steer' | 'queue'>(loadInProgressSendModePref())
 const darkMode = ref<'system' | 'light' | 'dark'>(loadDarkModePref())

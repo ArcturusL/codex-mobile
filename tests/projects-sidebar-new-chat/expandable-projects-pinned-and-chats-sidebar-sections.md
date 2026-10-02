@@ -38,3 +38,26 @@ The sidebar labels the grouped thread area as `Projects`, makes `Projects`, `Pin
 - Clear the sidebar search query if the filter step left it open
 
 ---
+
+### Sidebar spacing and optional navigation tabs
+
+#### Prerequisites
+- Open the sidebar with projects and chats, and settings available.
+
+#### Steps
+1. Check Projects/Chats in both normal and Chats first order, expanded and collapsed.
+2. Open Settings; independently disable Show Skills tab and Show Automations tab.
+3. Refresh, then re-enable each switch. Repeat in Chinese and English, light and dark themes.
+
+#### Expected Results
+- The section gap is 60px (three 20px text lines), independent of section order.
+- Both tabs default to visible. Each switch immediately hides only its tab and persists after refresh.
+- Settings remain reachable; re-enabling restores navigation. Labels and switches remain readable in both themes.
+
+#### Cleanup
+- Re-enable both tabs and restore the original ordering/theme/language.
+
+#### Automated UI Check
+With the current frontend preview on `http://127.0.0.1:4173`, run `node scripts/check-sidebar-preferences.cjs`. Checks independent switches, reload persistence, restoring tabs, and the 60px margin; captures 1440×1000 light/dark screenshots under `output/playwright/`. This preview check does not validate backend or chat loading.
+
+Performance review: no new dependencies, API calls, polling, or list traversal; two preference reads at mount and one localStorage write per changed switch. Frontend typecheck/build passed.

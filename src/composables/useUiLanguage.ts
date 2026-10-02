@@ -32,6 +32,8 @@ const zhCN: Record<string, string> = {
   'When busy, send as': '忙碌时发送方式',
   'Steer': '引导',
   'Queue': '排队',
+  'Show Skills tab': '显示技能选项卡',
+  'Show Automations tab': '显示 Automations 选项卡',
   'Appearance': '外观',
   'System': '跟随系统',
   'Dark': '深色',
