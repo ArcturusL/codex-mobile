@@ -1877,19 +1877,14 @@
 
 /* Math also appears in v-html list and plan content, so keep these rules global. */
 .conversation-root .message-math {
-  display: inline-block;
-  max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
+  display: inline;
   scrollbar-width: none;
-  padding: 0.15em 0;
-  vertical-align: middle;
   white-space: normal;
   overflow-wrap: normal;
   color: inherit;
 }
 
-/* Keep oversized formulas scrollable without scrollbar chrome taking up space. */
+/* Only display formulas scroll; inline math follows the surrounding text. */
 .conversation-root .message-math::-webkit-scrollbar {
   display: none;
 }
@@ -1897,6 +1892,10 @@
 .conversation-root .message-math-display {
   display: block;
   min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: none;
   padding: 0.4em 0;
 }
 

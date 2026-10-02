@@ -32,7 +32,7 @@ Render inline and display LaTeX formulas while preserving normal Markdown, code,
 - Incomplete streamed formulas remain readable source text until the closing delimiter arrives. The completed response renders identically after reload.
 - Inline and fenced code preserve dollar signs and LaTeX source. Currency remains normal text.
 - In the rendered TestChat row, `hrefOk`, `titleOk`, and `textOk` all pass: the file link has href `/codex-local-browse/tmp/TestChat/formula.md`, title `/tmp/TestChat/formula.md`, and visible text `formula.md`.
-- The page never overflows horizontally. A long display formula scrolls inside its own container. Both inline and display formulas hide scrollbar tracks/thumbs without disabling scrolling; the bar must not consume formula height. Math remains legible in both themes.
+- The page never overflows horizontally. A long display formula scrolls inside its own container. Inline formulas follow the text and have no independent scroll container. Display formulas hide scrollbar tracks/thumbs while remaining scrollable; the bar must not consume formula height. Math remains legible in both themes.
 - KaTeX font resources load from the local application, with no remote CDN request. Streaming rendering creates no duplicate `turn/start` calls; inspect the JSON report for other RPC counts and measured update-to-DOM timings/long tasks.
 - The script writes `output/playwright/testchat-math-cjs.json`, `output/playwright/testchat-math-cjs.png`, and light/dark viewport and conversation screenshots for both sizes.
 
@@ -57,3 +57,12 @@ Render inline and display LaTeX formulas while preserving normal Markdown, code,
 - Rollback: revert the formula scrollbar CSS rules; existing overflow behavior remains unchanged.
 
 Verification (2026-09-21): `pnpm_config_verify_deps_before_run=false pnpm run build:frontend` passed. The production build was served at `http://127.0.0.1:4174/#/thread/0195f727-b3ce-b843-bcb7-04b36dc70542` because 4173 belongs to another worktree. `CODEXUI_BASE_URL=http://127.0.0.1:4174 node scripts/verify-chat-math.cjs` passed at 1024×768 and 1440×900, in light/dark themes: all formula scrollbars hidden, no scrollbar height reserved, and long formulas still scroll with their left edges accessible. Twenty streaming updates averaged 8.14 ms (maximum 15.61 ms), with no long tasks during that measured sequence. This is a CSS-only fix; it does not add requests or alter parsing/caches. Screenshots and request/timing evidence are in `output/playwright/testchat-math-cjs.json` and `testchat-math-conversation-<theme>-<size>-cjs.png`.
+
+
+#### Inline formula motion regression (2026-09-22)
+- Send the reported Chinese paragraph with bold `\(U_0\)` and inline `\(1.30U_0\)`. Try horizontal dragging/trackpad scrolling over each formula, then reload and repeat in both themes.
+- Expected: both formulas stay fixed relative to the sentence, without clipped subscripts. Short inline formulas are ordinary inline content, not scroll containers. Long display formulas remain scrollable, with their left edges accessible and no visible scrollbar or overscroll bounce.
+- The automated TestChat check includes the exact paragraph and measures each inline formula before/after setting `scrollLeft`. Before the fix, both sample formulas moved by 2 CSS pixels (width/scrollWidth 19/21 and 51/53); after the fix, offsets must remain zero.
+- This changes shared CSS only; it adds no JavaScript, observers, requests, or parsing/cache work. Revert the inline/display layout rules to roll back; test data remains mocked.
+
+Verification: full build and 233 unit tests passed. Built frontend at `http://127.0.0.1:4173/#/thread/0195f727-b3ce-b843-bcb7-04b36dc70542` passed all four light/dark 1024×768 and 1440×900 cases, including inline scroll offsets, actual horizontal wheel input, long display scrolling, local fonts, and refresh. Twenty streamed updates averaged 7.71 ms (maximum 15.96 ms), with no long tasks during that sequence. No external requests or duplicate sends were observed. Evidence: `output/playwright/testchat-math-cjs.json` and `testchat-math-conversation-<theme>-<size>-cjs.png`.

@@ -13,6 +13,10 @@ const content = String.raw`${marker}
 
 Inline $x^2$ and \(\frac{a}{b}\). 反推与宏观应当是 $\left(x_i\right)^{l}_{j}$。这能解释。
 
+确定：**每件样品以首次老练前的初次闪络电压 \(U_0\) 为固定基准**。初次老练和重新预处理后的再次老练，均采用同一目标电压，例如 \(1.30U_0\)，分别记录所需时间和闪络次数。
+
+下一问：**某一次闪络电压达到目标就结束，还是需要连续若干次达到目标才算完成？** 这条用于明确新的老练结束判据。
+
 **Result $u^2$** *sum $v^2$* ~~$w^2$~~
 
 $$
@@ -117,6 +121,7 @@ async function setup(context, page, theme) {
 async function assertRendered(page) {
   const row = page.locator('.message-row[data-role="assistant"]').filter({ hasText: marker }).last()
   await row.locator('.katex').first().waitFor()
+  await page.evaluate(() => document.fonts.ready)
   const evidence = await row.evaluate((element, { filePath, marker }) => {
     const annotations = [...element.querySelectorAll('annotation')].map((node) => node.textContent.trim())
     const link = element.querySelector('a.message-file-link[title="' + filePath + '"]')
@@ -133,10 +138,19 @@ async function assertRendered(page) {
       emphasisDetail: { strong: element.querySelectorAll('strong .katex').length, em: element.querySelectorAll('em .katex').length, s: element.querySelectorAll('s .katex').length, literalMarkers: [...element.querySelectorAll('.message-text')].filter((node) => node.textContent.includes('**')).map((node) => node.textContent) },
       emphasisOk: !!element.querySelector('strong .katex') && !!element.querySelector('em .katex') && !!element.querySelector('s .katex') && !element.textContent.includes('**'),
       displays,
+      inlineMotion: [...element.querySelectorAll('.message-math:not(.message-math-display)')].map((node) => {
+        const formula = node.querySelector('.katex-html')
+        const before = formula.getBoundingClientRect().left
+        node.scrollLeft = 40
+        const moved = formula.getBoundingClientRect().left - before
+        const scrollLeft = node.scrollLeft
+        node.scrollLeft = 0
+        return { formula: node.querySelector('annotation').textContent, overflowX: getComputedStyle(node).overflowX, scrollLeft, moved, clientWidth: node.clientWidth, scrollWidth: node.scrollWidth }
+      }),
       scrollbarsHidden: [...element.querySelectorAll('.message-math')].every((node) => (
         getComputedStyle(node).scrollbarWidth === 'none'
         && getComputedStyle(node, '::-webkit-scrollbar').display === 'none'
-        && node.offsetHeight === node.clientHeight
+        && (getComputedStyle(node).display === 'inline' || node.offsetHeight === node.clientHeight)
       )),
       pageOverflow: document.documentElement.scrollWidth > innerWidth + 1,
       invalidMath: element.querySelectorAll('.katex-error').length,
@@ -146,6 +160,8 @@ async function assertRendered(page) {
   }, { filePath, marker })
   for (const key of ['hrefOk', 'titleOk', 'textOk', 'codeOk', 'moneyOk', 'tableOk', 'listOk', 'emphasisOk', 'scrollbarsHidden']) assert(evidence[key], `${key}: ${JSON.stringify(evidence)}`)
   for (const formula of ['x^2', '\\frac{a}{b}', '\\int_0^1 x^2\\,dx=\\frac{1}{3}', '\\begin{bmatrix}1 & 2 \\\\ 3 & 4\\end{bmatrix}', 'a_i^2+b_i^2=c_i^2', '\\sqrt{2}', '|x|', 'x^3', 'y^3', 'u^2', 'v^2', 'w^2']) assert(evidence.annotations.includes(formula), `Missing rendered formula: ${formula}`)
+  assert(evidence.inlineMotion.every((node) => node.scrollLeft === 0 && node.moved === 0 && node.overflowX === 'visible'), 'Inline formulas must not be scroll containers: ' + JSON.stringify(evidence.inlineMotion))
+  assert(evidence.annotations.includes('U_0') && evidence.annotations.includes('1.30U_0'), 'User sample renders both inline formulas')
   assert(!evidence.pageOverflow, 'Page must not overflow horizontally')
   assert.equal(evidence.invalidMath, 0)
   assert(evidence.displays.some((row) => row.scrollWidth > row.clientWidth && ['auto', 'scroll'].includes(row.overflowX)), 'Long display formula scrolls within its container')
@@ -160,6 +176,15 @@ async function assertRendered(page) {
   assert(scroll.scrollOk, 'Long display formula accepts horizontal scrolling')
   assert(scroll.leftAccessible, 'Long display formula left edge stays accessible')
   evidence.scroll = scroll
+  const sample = row.locator('.message-math:not(.message-math-display)').filter({ has: page.locator('annotation', { hasText: /^1\.30U_0$/ }) }).first()
+  await sample.locator('.katex-base, .base').first().scrollIntoViewIfNeeded()
+  const initialLeft = await sample.locator('.katex-html').evaluate((node) => node.getBoundingClientRect().left)
+  await sample.locator('.katex-base, .base').first().hover()
+  await page.mouse.wheel(80, 0)
+  await page.waitForTimeout(100)
+  const finalLeft = await sample.locator('.katex-html').evaluate((node) => node.getBoundingClientRect().left)
+  assert.equal(finalLeft, initialLeft, 'Horizontal wheel input must not move the inline sample')
+  evidence.inlineWheelStationary = true
   await page.evaluate(() => document.fonts.ready)
   evidence.fonts = await page.evaluate(() => ({ loaded: [...document.fonts].filter((font) => /KaTeX/.test(font.family) && font.status === 'loaded').map((font) => font.family), requests: performance.getEntriesByType('resource').filter((entry) => /KaTeX.*\.(woff2?|ttf)/i.test(entry.name)).map((entry) => ({ url: entry.name, duration: entry.duration })) }))
   assert(evidence.fonts.loaded.length > 0, 'KaTeX fonts actually loaded')
