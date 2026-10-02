@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { generateThreadTitle, getAvailableModelIds, getThreadDetail, listDirectoryComposioConnectors, resumeThread, startThreadTurn, getThreadQueueState, setThreadQueueState } from './codexGateway'
+import { getCurrentModelConfig, generateThreadTitle, getAvailableModelIds, getThreadDetail, listDirectoryComposioConnectors, resumeThread, startThreadTurn, getThreadQueueState, setThreadQueueState } from './codexGateway'
 
 function mockRpcFetch(): { requests: Array<{ method: string, params: Record<string, unknown> }> } {
   const requests: Array<{ method: string, params: Record<string, unknown> }> = []
@@ -327,4 +327,17 @@ it('keeps permission snapshots through queue write/read normalization', async ()
     await setThreadQueueState(queue)
     expect(await getThreadQueueState()).toEqual(queue)
   } finally { vi.unstubAllGlobals() }
+})
+
+describe('Fast mode config aliases', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it.each([['fast', 'fast'], ['priority', 'fast'], [null, 'standard'], ['default', 'standard']])(
+    'reads %s as %s', async (serviceTier, speedMode) => {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+        result: { config: { model: 'gpt-6-astra', service_tier: serviceTier } },
+      }), { status: 200 })))
+      expect((await getCurrentModelConfig()).speedMode).toBe(speedMode)
+    },
+  )
 })

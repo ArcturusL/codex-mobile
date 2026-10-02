@@ -231,29 +231,6 @@
             </div>
             <div class="thread-composer-attach-separator" />
             <button
-              v-if="isFastModeSupported"
-              class="thread-composer-attach-setting"
-              type="button"
-              role="switch"
-              :aria-checked="selectedSpeedMode === 'fast'"
-              :aria-label="`${t('Fast mode')} ${selectedSpeedMode === 'fast' ? t('enabled') : t('disabled')}`"
-              :disabled="isSpeedToggleDisabled"
-              @click="onToggleSpeedMode"
-            >
-              <span class="thread-composer-attach-setting-copy">
-                <span class="thread-composer-attach-setting-label">{{ t('Fast mode') }}</span>
-                <span class="thread-composer-attach-setting-description">{{ speedModeDescription }}</span>
-              </span>
-              <span
-                class="thread-composer-attach-switch"
-                :class="{
-                  'is-on': selectedSpeedMode === 'fast',
-                  'is-busy': isUpdatingSpeedMode,
-                  'is-disabled': isSpeedToggleDisabled,
-                }"
-              />
-            </button>
-            <button
               class="thread-composer-attach-setting"
               type="button"
               role="switch"
@@ -313,6 +290,29 @@
             :disabled="isComposerConfigDisabled"
             @update:model-value="onReasoningEffortSelect"
           />
+          <button
+            v-if="isFastModeSupported"
+            class="thread-composer-fast-toggle"
+            type="button"
+            role="switch"
+            :aria-checked="selectedSpeedMode === 'fast'"
+            :aria-label="t('Fast mode')"
+            :aria-busy="isUpdatingSpeedMode === true"
+            :title="speedModeDescription"
+            :disabled="isSpeedToggleDisabled"
+            @click="onToggleSpeedMode"
+          >
+            <span>{{ t('Fast mode') }}</span>
+            <span
+              class="thread-composer-attach-switch"
+              aria-hidden="true"
+              :class="{
+                'is-on': selectedSpeedMode === 'fast',
+                'is-busy': isUpdatingSpeedMode,
+                'is-disabled': isSpeedToggleDisabled,
+              }"
+            />
+          </button>
           <ComposerDropdown
             class="thread-composer-control thread-composer-permissions"
             :model-value="selectedPermissionMode || ''"
@@ -740,7 +740,7 @@ const standaloneFileAttachments = computed(() => {
 })
 const isInteractionDisabled = computed(() => props.disabled || !props.activeThreadId)
 const isComposerConfigDisabled = computed(() => props.disabled || !props.activeThreadId)
-const isFastModeSupported = computed(() => /^gpt-5\.(?:4|5)(?:$|-)/.test(props.selectedModel.trim()))
+const isFastModeSupported = computed(() => /^(?:gpt-5\.(?:4|5|6)|gpt-6-astra)(?:$|-)/i.test(props.selectedModel.trim()))
 const showFastModeModelIcon = computed(() =>
   props.selectedSpeedMode === 'fast' && isFastModeSupported.value,
 )
@@ -752,7 +752,7 @@ const speedModeDescription = computed(() => {
     return t('Saving speed setting...')
   }
   return props.selectedSpeedMode === 'fast'
-    ? t('About 1.5x faster, with credits used at 2x')
+    ? t('Faster responses with higher usage. Availability and rates depend on the model and account.')
     : t('Default speed with normal credit usage')
 })
 const inProgressMode = computed<'steer' | 'queue'>(() =>
@@ -2405,6 +2405,10 @@ watch(
 
 .thread-composer-attach-switch.is-disabled {
   @apply opacity-50;
+}
+
+.thread-composer-fast-toggle {
+  @apply inline-flex h-9 shrink-0 items-center gap-2 rounded-md border-0 bg-transparent px-1 text-sm text-zinc-600 transition hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:opacity-50;
 }
 
 .thread-composer-control {

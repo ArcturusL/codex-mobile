@@ -694,7 +694,7 @@ function normalizeReasoningEffort(value: unknown): ReasoningEffort | '' {
 }
 
 function normalizeSpeedMode(value: unknown): SpeedMode {
-  return typeof value === 'string' && value.trim().toLowerCase() === 'fast'
+  return typeof value === 'string' && ['fast', 'priority'].includes(value.trim().toLowerCase())
     ? 'fast'
     : 'standard'
 }

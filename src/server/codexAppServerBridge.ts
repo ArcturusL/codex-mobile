@@ -2504,6 +2504,18 @@ function isArchivedThreadReadResult(threadReadResult: unknown): boolean {
   return sessionPath.split(/[\\/]+/u).includes('archived_sessions')
 }
 
+export async function applyConfiguredServiceTier(appServer: RpcExecutor, params: unknown): Promise<unknown> {
+  const record = asRecord(params)
+  if (!record || 'serviceTier' in record || 'serviceTierForTurn' in record) return params
+
+  // Codex does not reload service-tier defaults into already loaded threads.
+  // Use the current setting for every send, including backend-drained queues.
+  const result = asRecord(await appServer.rpc('config/read', { includeLayers: false }))
+  const config = asRecord(result?.config)
+  if (!config || !('service_tier' in config)) return params
+  return { ...record, serviceTier: config.service_tier ?? null }
+}
+
 export async function callRpcWithArchiveRecovery(
   appServer: RpcExecutor,
   method: string,
@@ -6792,6 +6804,9 @@ class AppServerProcess {
   async rpc(method: string, params: unknown): Promise<unknown> {
     this.disposeIfConfigChanged()
     await this.ensureInitialized()
+    if (method === 'turn/start') {
+      params = await applyConfiguredServiceTier({ rpc: (name, input) => this.call(name, input) }, params)
+    }
     return this.call(method, params)
   }
 

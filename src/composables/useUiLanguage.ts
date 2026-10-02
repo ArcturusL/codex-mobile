@@ -368,7 +368,7 @@ const zhCN: Record<string, string> = {
   'enabled': '已启用',
   'disabled': '已禁用',
   'Saving speed setting...': '保存速度设置中...',
-  'About 1.5x faster, with credits used at 2x': '速度约提升 1.5 倍，额度消耗为 2 倍',
+  'Faster responses with higher usage. Availability and rates depend on the model and account.': '响应更快，用量更高；可用性与费率取决于模型和账户。',
   'Default speed with normal credit usage': '默认速度，按正常额度消耗',
   'Stop dictation': '停止听写',
   'Click to dictate': '点击开始听写',

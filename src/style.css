@@ -420,6 +420,10 @@
   @apply bg-zinc-200 text-zinc-900 hover:text-zinc-900;
 }
 
+:root.dark .thread-composer-fast-toggle {
+  @apply text-zinc-300 hover:text-zinc-100;
+}
+
 :root.dark .thread-composer-attach-switch {
   @apply bg-zinc-600;
 }

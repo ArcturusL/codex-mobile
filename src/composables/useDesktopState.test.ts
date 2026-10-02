@@ -94,6 +94,31 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('composer Fast mode', () => {
+  it('saves the selection once while pending and restores it if saving fails', async () => {
+    installTestWindow()
+    let finishSave!: () => void
+    gatewayMocks.setCodexSpeedMode.mockImplementationOnce(() => new Promise<void>((resolve) => { finishSave = resolve }))
+    const state = useDesktopState()
+
+    const saving = state.updateSelectedSpeedMode('fast')
+    expect(state.selectedSpeedMode.value).toBe('fast')
+    expect(state.isUpdatingSpeedMode.value).toBe(true)
+    await state.updateSelectedSpeedMode('standard')
+    expect(gatewayMocks.setCodexSpeedMode).toHaveBeenCalledTimes(1)
+    expect(gatewayMocks.setCodexSpeedMode).toHaveBeenCalledWith('fast')
+    finishSave()
+    await saving
+    expect(state.isUpdatingSpeedMode.value).toBe(false)
+
+    gatewayMocks.setCodexSpeedMode.mockRejectedValueOnce(new Error('config is read-only'))
+    await state.updateSelectedSpeedMode('standard')
+    expect(state.selectedSpeedMode.value).toBe('fast')
+    expect(state.error.value).toBe('config is read-only')
+    expect(state.isUpdatingSpeedMode.value).toBe(false)
+  })
+})
+
 describe('filterGroupsByWorkspaceRoots', () => {
   it('keeps projectless chats visible when workspace roots are configured', () => {
     const groups: UiProjectGroup[] = [
