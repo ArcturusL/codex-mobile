@@ -1,3 +1,4 @@
+import { updateGlobalState } from '../server/globalState.js'
 import { createServer } from 'node:http'
 import { chmodSync, createWriteStream, existsSync, mkdirSync } from 'node:fs'
 import { readFile, stat, writeFile } from 'node:fs/promises'
@@ -420,29 +421,18 @@ async function persistLaunchProject(projectPath: string): Promise<void> {
     throw new Error(`Not a directory: ${normalizedPath}`)
   }
 
-  const statePath = getCodexGlobalStatePath()
-  let payload: Record<string, unknown> = {}
-  try {
-    const raw = await readFile(statePath, 'utf8')
-    const parsed = JSON.parse(raw) as unknown
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      payload = parsed as Record<string, unknown>
-    }
-  } catch {
-    payload = {}
-  }
-
-  const roots = normalizeUniqueStrings(payload['electron-saved-workspace-roots'])
-  const activeRoots = normalizeUniqueStrings(payload['active-workspace-roots'])
-  payload['electron-saved-workspace-roots'] = [
-    normalizedPath,
-    ...roots.filter((value) => value !== normalizedPath),
-  ]
-  payload['active-workspace-roots'] = [
-    normalizedPath,
-    ...activeRoots.filter((value) => value !== normalizedPath),
-  ]
-  await writeFile(statePath, JSON.stringify(payload), 'utf8')
+  await updateGlobalState(getCodexGlobalStatePath(), (payload) => {
+    const roots = normalizeUniqueStrings(payload['electron-saved-workspace-roots'])
+    const activeRoots = normalizeUniqueStrings(payload['active-workspace-roots'])
+    payload['electron-saved-workspace-roots'] = [
+      normalizedPath,
+      ...roots.filter((value) => value !== normalizedPath),
+    ]
+    payload['active-workspace-roots'] = [
+      normalizedPath,
+      ...activeRoots.filter((value) => value !== normalizedPath),
+    ]
+  })
 }
 
 async function addProjectOnly(projectPath: string): Promise<void> {

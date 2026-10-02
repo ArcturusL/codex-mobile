@@ -1,3 +1,4 @@
+import { readGlobalState, updateGlobalState } from './globalState.js'
 import { mergeSessionFileChanges, readSessionFileChanges } from './sessionFileChanges'
 import { turnDiffItem } from '../shared/turnDiff'
 import { normalizePermissionMode, permissionModeParams, type PermissionMode } from '../shared/permissionMode'
@@ -5495,16 +5496,9 @@ async function readThreadTitleCache(): Promise<ThreadTitleCache> {
 }
 
 async function writeThreadTitleCache(cache: ThreadTitleCache): Promise<void> {
-  const statePath = getCodexGlobalStatePath()
-  let payload: Record<string, unknown> = {}
-  try {
-    const raw = await readFile(statePath, 'utf8')
-    payload = asRecord(JSON.parse(raw)) ?? {}
-  } catch {
-    payload = {}
-  }
-  payload['thread-titles'] = cache
-  await writeFile(statePath, JSON.stringify(payload), 'utf8')
+  await updateGlobalState(getCodexGlobalStatePath(), (payload) => {
+    payload['thread-titles'] = cache
+  })
 }
 
 async function readPinnedThreadIds(): Promise<string[]> {
@@ -5519,17 +5513,9 @@ async function readPinnedThreadIds(): Promise<string[]> {
 }
 
 async function writePinnedThreadIds(threadIds: string[]): Promise<void> {
-  const statePath = getCodexGlobalStatePath()
-  let payload: Record<string, unknown> = {}
-  try {
-    const raw = await readFile(statePath, 'utf8')
-    payload = asRecord(JSON.parse(raw)) ?? {}
-  } catch {
-    payload = {}
-  }
-
-  payload[PINNED_THREAD_IDS_KEY] = normalizePinnedThreadIds(threadIds)
-  await writeFile(statePath, JSON.stringify(payload), 'utf8')
+  await updateGlobalState(getCodexGlobalStatePath(), (payload) => {
+    payload[PINNED_THREAD_IDS_KEY] = normalizePinnedThreadIds(threadIds)
+  })
 }
 
 const FIRST_LAUNCH_PLUGINS_CARD_DISMISSED_KEY = 'first-launch-plugins-card-dismissed'
@@ -5636,21 +5622,14 @@ async function readThreadQueueState(): Promise<ThreadQueueState> {
 }
 
 async function writeThreadQueueStateUnlocked(nextState: ThreadQueueState): Promise<void> {
-  const statePath = getCodexGlobalStatePath()
-  let payload: Record<string, unknown> = {}
-  try {
-    const raw = await readFile(statePath, 'utf8')
-    payload = asRecord(JSON.parse(raw)) ?? {}
-  } catch {
-    payload = {}
-  }
-  const normalized = normalizeThreadQueueState(nextState)
-  if (Object.keys(normalized).length > 0) {
-    payload[THREAD_QUEUE_STATE_KEY] = normalized
-  } else {
-    delete payload[THREAD_QUEUE_STATE_KEY]
-  }
-  await writeFile(statePath, JSON.stringify(payload), 'utf8')
+  await updateGlobalState(getCodexGlobalStatePath(), (payload) => {
+    const normalized = normalizeThreadQueueState(nextState)
+    if (Object.keys(normalized).length > 0) {
+      payload[THREAD_QUEUE_STATE_KEY] = normalized
+    } else {
+      delete payload[THREAD_QUEUE_STATE_KEY]
+    }
+  })
 }
 
 async function withThreadQueueStateUpdate<T>(
@@ -5784,16 +5763,9 @@ async function readFirstLaunchPluginsCardDismissed(): Promise<boolean> {
 }
 
 async function writeFirstLaunchPluginsCardDismissed(dismissed: boolean): Promise<void> {
-  const statePath = getCodexGlobalStatePath()
-  let payload: Record<string, unknown> = {}
-  try {
-    const raw = await readFile(statePath, 'utf8')
-    payload = asRecord(JSON.parse(raw)) ?? {}
-  } catch {
-    payload = {}
-  }
-  payload[FIRST_LAUNCH_PLUGINS_CARD_DISMISSED_KEY] = dismissed === true
-  await writeFile(statePath, JSON.stringify(payload), 'utf8')
+  await updateGlobalState(getCodexGlobalStatePath(), (payload) => {
+    payload[FIRST_LAUNCH_PLUGINS_CARD_DISMISSED_KEY] = dismissed === true
+  })
 }
 
 function getSessionIndexFileSignature(stats: { mtimeMs: number; size: number }): string {
@@ -5974,16 +5946,7 @@ export async function canonicalizeThreadListResponseForRead(
 }
 
 async function readWorkspaceRootsState(): Promise<WorkspaceRootsState> {
-  const statePath = getCodexGlobalStatePath()
-  let payload: Record<string, unknown> = {}
-
-  try {
-    const raw = await readFile(statePath, 'utf8')
-    const parsed = JSON.parse(raw) as unknown
-    payload = asRecord(parsed) ?? {}
-  } catch {
-    payload = {}
-  }
+  const payload = await readGlobalState(getCodexGlobalStatePath())
 
   return await canonicalizeWorkspaceRootsState({
     order: normalizeStringArray(payload['electron-saved-workspace-roots']),
@@ -5996,21 +5959,12 @@ async function readWorkspaceRootsState(): Promise<WorkspaceRootsState> {
 
 export async function writeWorkspaceRootsState(nextState: WorkspaceRootsState): Promise<void> {
   const state = await canonicalizeWorkspaceRootsState(nextState)
-  const statePath = getCodexGlobalStatePath()
-  let payload: Record<string, unknown> = {}
-  try {
-    const raw = await readFile(statePath, 'utf8')
-    payload = asRecord(JSON.parse(raw)) ?? {}
-  } catch {
-    payload = {}
-  }
-
-  payload['electron-saved-workspace-roots'] = normalizeStringArray(state.order)
-  payload['electron-workspace-root-labels'] = normalizeStringRecord(state.labels)
-  payload['active-workspace-roots'] = normalizeStringArray(state.active)
-  payload['project-order'] = normalizeStringArray(state.projectOrder)
-
-  await writeFile(statePath, JSON.stringify(payload), 'utf8')
+  await updateGlobalState(getCodexGlobalStatePath(), (payload) => {
+    payload['electron-saved-workspace-roots'] = normalizeStringArray(state.order)
+    payload['electron-workspace-root-labels'] = normalizeStringRecord(state.labels)
+    payload['active-workspace-roots'] = normalizeStringArray(state.active)
+    payload['project-order'] = normalizeStringArray(state.projectOrder)
+  })
 }
 
 let workspaceRootsMutation: Promise<void> = Promise.resolve()

@@ -496,6 +496,57 @@ describe('Codex CLI availability', () => {
 
 })
 
+describe('project list refresh stability', () => {
+  beforeEach(() => {
+    gatewayMocks.getThreadGroupsPage.mockReset()
+    gatewayMocks.getWorkspaceRootsState.mockReset()
+  })
+
+  it('retains empty projects after a failed roots fetch but respects a successful removal', async () => {
+    installTestWindow()
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({ groups: [], nextCursor: null })
+    gatewayMocks.getWorkspaceRootsState
+      .mockResolvedValueOnce({ order: ['/tmp/empty-project'], labels: {}, active: [], projectOrder: [] })
+      .mockRejectedValueOnce(new Error('Temporary network failure'))
+      .mockResolvedValueOnce({ order: [], labels: {}, active: [], projectOrder: [] })
+    const state = useDesktopState()
+    const refresh = () => state.refreshAll({ includeSelectedThreadMessages: false, forceThreadRefresh: true })
+    await refresh()
+    expect(state.projectGroups.value.map((group) => group.projectName)).toEqual(['empty-project'])
+    await refresh()
+    expect(state.projectGroups.value.map((group) => group.projectName)).toEqual(['empty-project'])
+    await refresh()
+    expect(state.projectGroups.value).toEqual([])
+    expect(gatewayMocks.getThreadGroupsPage).toHaveBeenCalledTimes(3)
+    expect(gatewayMocks.getWorkspaceRootsState).toHaveBeenCalledTimes(3)
+  })
+
+  it('uses the latest project list when an older background page completes', async () => {
+    installTestWindow()
+    let loadBackground!: () => void
+    vi.mocked(window.setTimeout).mockImplementation(((callback: () => void, delay: number) => {
+      if (delay === 10_000) loadBackground = callback
+      return 1
+    }) as typeof window.setTimeout)
+    let finishBackground!: (page: { groups: UiProjectGroup[]; nextCursor: null }) => void
+    gatewayMocks.getThreadGroupsPage
+      .mockResolvedValueOnce({ groups: [], nextCursor: 'older' })
+      .mockImplementationOnce(() => new Promise((resolve) => { finishBackground = resolve }))
+      .mockResolvedValueOnce({ groups: [], nextCursor: 'older' })
+    gatewayMocks.getWorkspaceRootsState
+      .mockResolvedValueOnce({ order: ['/tmp/old-project'], labels: {}, active: [], projectOrder: [] })
+      .mockResolvedValueOnce({ order: ['/tmp/new-project'], labels: {}, active: [], projectOrder: [] })
+    const state = useDesktopState()
+    await state.refreshAll({ includeSelectedThreadMessages: false })
+    loadBackground()
+    await state.refreshAll({ includeSelectedThreadMessages: false, forceThreadRefresh: true })
+    expect(state.projectGroups.value.map((group) => group.projectName)).toEqual(['new-project'])
+    finishBackground({ groups: [], nextCursor: null })
+    await vi.waitFor(() => expect(state.isThreadListFullyLoaded.value).toBe(true))
+    expect(state.projectGroups.value.map((group) => group.projectName)).toEqual(['new-project'])
+  })
+})
+
 describe('startup request deduplication', () => {
   it('reloads cached thread titles on forced thread refresh', async () => {
     installTestWindow()

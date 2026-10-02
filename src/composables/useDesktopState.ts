@@ -4262,7 +4262,7 @@ export function useDesktopState() {
     try {
       return await getWorkspaceRootsState()
     } catch {
-      return null
+      return loadedThreadListRootsState
     }
   }
 
@@ -4438,7 +4438,7 @@ export function useDesktopState() {
     loadedThreadListRootsState = rootsState
 
     if (typeof window === 'undefined') {
-      void loadRemainingThreadPages(rootsState)
+      void loadRemainingThreadPages()
       return
     }
 
@@ -4449,11 +4449,11 @@ export function useDesktopState() {
     threadListBackgroundTimer = window.setTimeout(() => {
       threadListBackgroundTimer = null
       if (!threadListNextCursor || hasActiveInProgressThreads()) return
-      void loadRemainingThreadPages(loadedThreadListRootsState)
+      void loadRemainingThreadPages()
     }, BACKGROUND_THREAD_PAGINATION_DELAY_MS)
   }
 
-  async function loadRemainingThreadPages(rootsState: WorkspaceRootsState | null): Promise<void> {
+  async function loadRemainingThreadPages(): Promise<void> {
     if (isLoadingRemainingThreadPages || !threadListNextCursor || hasActiveInProgressThreads()) return
     isLoadingRemainingThreadPages = true
 
@@ -4463,13 +4463,13 @@ export function useDesktopState() {
       hasLoadedAllThreadPages = page.nextCursor === null
       isThreadListFullyLoaded.value = hasLoadedAllThreadPages
       loadedThreadListGroups = mergeThreadGroupPages(loadedThreadListGroups, page.groups)
-      applyThreadGroups(loadedThreadListGroups, rootsState)
+      applyThreadGroups(loadedThreadListGroups, loadedThreadListRootsState)
     } catch {
       // Keep the first page usable; a later refresh can retry remaining pages.
     } finally {
       isLoadingRemainingThreadPages = false
       if (threadListNextCursor && !hasActiveInProgressThreads()) {
-        scheduleRemainingThreadPages(rootsState)
+        scheduleRemainingThreadPages()
       }
     }
   }
