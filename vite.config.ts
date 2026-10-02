@@ -75,7 +75,7 @@ function getWorktreeName(): string {
   return segments[segments.length - 1] ?? "unknown";
 }
 
-const worktreeName = getWorktreeName();
+const worktreeName = process.env.VITE_WORKTREE_NAME?.trim() || getWorktreeName();
 const appVersion = typeof pkg.version === "string" ? pkg.version : "unknown";
 const WS_UPGRADE_ATTACHED_KEY = "__codexBridgeWsAttached__";
 
