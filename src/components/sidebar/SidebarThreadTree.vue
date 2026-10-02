@@ -3013,15 +3013,18 @@ onBeforeUnmount(() => {
 }
 
 .chats-section {
-  @apply order-3 mt-1;
+  @apply order-3;
+  margin-top: 60px; /* Three blank lines at the sidebar’s 20px line height. */
 }
 
 .thread-tree-root.chats-first .chats-section {
   @apply order-2;
+  margin-top: 0;
 }
 
 .thread-tree-root.chats-first .projects-section {
   @apply order-3;
+  margin-top: 60px;
 }
 
 .thread-tree-header-row {
