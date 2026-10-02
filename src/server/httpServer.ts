@@ -6,7 +6,7 @@ import { writeFile, stat } from 'node:fs/promises'
 import express, { type Express } from 'express'
 import { createCodexBridgeMiddleware } from './codexAppServerBridge.js'
 import { createAuthSession } from './authMiddleware.js'
-import { createDirectoryListingHtml, createTextEditorHtml, decodeBrowsePath, getLocalDirectoryListing, isTextEditableFile, normalizeLocalPath } from './localBrowseUi.js'
+import { localFileActionsMiddleware, createDirectoryListingHtml, createTextEditorHtml, getLocalDirectoryListing, isTextEditableFile, normalizeLocalPath } from './localBrowseUi.js'
 import { WebSocketServer, type WebSocket } from 'ws'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -83,6 +83,7 @@ export function createServer(options: ServerOptions = {}): ServerInstance {
   }
 
   // 2. Bridge middleware for /codex-api/*
+  app.use(localFileActionsMiddleware)
   app.use(bridge)
 
   // 3. Serve local images referenced in markdown (desktop parity for absolute image paths)
@@ -152,7 +153,7 @@ export function createServer(options: ServerOptions = {}): ServerInstance {
   // 6. Serve local files by path to preserve relative asset loading for HTML.
   app.get('/codex-local-browse/*path', async (req, res) => {
     const rawPath = readWildcardPathParam(req.params.path)
-    const localPath = decodeBrowsePath(`/${rawPath}`)
+    const localPath = `/${rawPath}`
     const newProjectName = typeof req.query.newProjectName === 'string' ? req.query.newProjectName : ''
     if (!localPath || !isAbsolute(localPath)) {
       res.status(400).json({ error: 'Expected absolute local file path.' })
@@ -180,7 +181,7 @@ export function createServer(options: ServerOptions = {}): ServerInstance {
   // 7. Edit text-like local files.
   app.get('/codex-local-edit/*path', async (req, res) => {
     const rawPath = readWildcardPathParam(req.params.path)
-    const localPath = decodeBrowsePath(`/${rawPath}`)
+    const localPath = `/${rawPath}`
     if (!localPath || !isAbsolute(localPath)) {
       res.status(400).json({ error: 'Expected absolute local file path.' })
       return
@@ -200,7 +201,7 @@ export function createServer(options: ServerOptions = {}): ServerInstance {
 
   app.put('/codex-local-edit/*path', express.text({ type: '*/*', limit: '10mb' }), async (req, res) => {
     const rawPath = readWildcardPathParam(req.params.path)
-    const localPath = decodeBrowsePath(`/${rawPath}`)
+    const localPath = `/${rawPath}`
     if (!localPath || !isAbsolute(localPath)) {
       res.status(400).json({ error: 'Expected absolute local file path.' })
       return
