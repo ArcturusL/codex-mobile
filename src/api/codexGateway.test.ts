@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getAvailableModelIds, getThreadDetail, listDirectoryComposioConnectors, resumeThread, startThreadTurn, getThreadQueueState, setThreadQueueState } from './codexGateway'
+import { generateThreadTitle, getAvailableModelIds, getThreadDetail, listDirectoryComposioConnectors, resumeThread, startThreadTurn, getThreadQueueState, setThreadQueueState } from './codexGateway'
 
 function mockRpcFetch(): { requests: Array<{ method: string, params: Record<string, unknown> }> } {
   const requests: Array<{ method: string, params: Record<string, unknown> }> = []
@@ -58,6 +58,38 @@ describe('startThreadTurn collaboration mode payloads', () => {
         developer_instructions: null,
       },
     })
+  })
+})
+
+describe('generateThreadTitle', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sends the conversation model and provider and trims the returned title', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ result: { title: '  Todo app  ' } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const context = { threadId: 'thread-1', model: 'big-pickle', modelProvider: 'opencode-zen' }
+
+    await expect(generateThreadTitle('User: Build a todo app\nAssistant: Done.', '/tmp/project', context))
+      .resolves.toBe('Todo app')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      body: JSON.stringify({
+        method: 'generate-thread-title',
+        params: { prompt: 'User: Build a todo app\nAssistant: Done.', cwd: '/tmp/project', ...context },
+      }),
+    }))
+  })
+
+  it('returns an empty title when generation fails so a later completion can retry', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('model unavailable')))
+    await expect(generateThreadTitle('User: Build a todo app', null, {
+      threadId: 'thread-1', model: 'gpt-5.4-mini', modelProvider: 'codex',
+    })).resolves.toBe('')
   })
 })
 

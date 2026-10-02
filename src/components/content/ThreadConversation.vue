@@ -352,6 +352,7 @@
                     <p v-if="block.kind === 'paragraph'" class="message-text">
                       <template v-for="(segment, segmentIndex) in getInlineSegments(block.value)" :key="`seg-${blockIndex}-${segmentIndex}`">
                         <span v-if="segment.kind === 'text'">{{ segment.value }}</span>
+                        <span v-else-if="segment.kind === 'math'" class="message-math" :class="{ 'message-math-display': segment.displayMode }" v-html="renderInlineMathAsHtml(segment)" />
                         <strong v-else-if="segment.kind === 'bold'" class="message-bold-text">{{ segment.value }}</strong>
                         <em v-else-if="segment.kind === 'italic'" class="message-italic-text">{{ segment.value }}</em>
                         <s v-else-if="segment.kind === 'strikethrough'" class="message-strikethrough-text">{{ segment.value }}</s>
@@ -386,6 +387,7 @@
                     >
                       <template v-for="(segment, segmentIndex) in getInlineSegments(block.value)" :key="`heading-seg-${blockIndex}-${segmentIndex}`">
                         <span v-if="segment.kind === 'text'">{{ segment.value }}</span>
+                        <span v-else-if="segment.kind === 'math'" class="message-math" :class="{ 'message-math-display': segment.displayMode }" v-html="renderInlineMathAsHtml(segment)" />
                         <strong v-else-if="segment.kind === 'bold'" class="message-bold-text">{{ segment.value }}</strong>
                         <em v-else-if="segment.kind === 'italic'" class="message-italic-text">{{ segment.value }}</em>
                         <s v-else-if="segment.kind === 'strikethrough'" class="message-strikethrough-text">{{ segment.value }}</s>
@@ -415,6 +417,7 @@
                     <blockquote v-else-if="block.kind === 'blockquote'" class="message-blockquote">
                       <template v-for="(segment, segmentIndex) in getInlineSegments(block.value)" :key="`quote-seg-${blockIndex}-${segmentIndex}`">
                         <span v-if="segment.kind === 'text'">{{ segment.value }}</span>
+                        <span v-else-if="segment.kind === 'math'" class="message-math" :class="{ 'message-math-display': segment.displayMode }" v-html="renderInlineMathAsHtml(segment)" />
                         <strong v-else-if="segment.kind === 'bold'" class="message-bold-text">{{ segment.value }}</strong>
                         <em v-else-if="segment.kind === 'italic'" class="message-italic-text">{{ segment.value }}</em>
                         <s v-else-if="segment.kind === 'strikethrough'" class="message-strikethrough-text">{{ segment.value }}</s>
@@ -452,6 +455,7 @@
                         <div class="message-list-item-text">
                           <template v-for="(segment, segmentIndex) in getInlineSegments(item.text)" :key="`task-seg-${blockIndex}-${itemIndex}-${segmentIndex}`">
                             <span v-if="segment.kind === 'text'">{{ segment.value }}</span>
+                            <span v-else-if="segment.kind === 'math'" class="message-math" :class="{ 'message-math-display': segment.displayMode }" v-html="renderInlineMathAsHtml(segment)" />
                             <strong v-else-if="segment.kind === 'bold'" class="message-bold-text">{{ segment.value }}</strong>
                             <em v-else-if="segment.kind === 'italic'" class="message-italic-text">{{ segment.value }}</em>
                             <s v-else-if="segment.kind === 'strikethrough'" class="message-strikethrough-text">{{ segment.value }}</s>
@@ -501,6 +505,7 @@
                             >
                               <template v-for="(segment, segmentIndex) in getInlineSegments(cell)" :key="`th-seg-${blockIndex}-${cellIndex}-${segmentIndex}`">
                                 <span v-if="segment.kind === 'text'">{{ segment.value }}</span>
+                                <span v-else-if="segment.kind === 'math'" class="message-math" :class="{ 'message-math-display': segment.displayMode }" v-html="renderInlineMathAsHtml(segment)" />
                                 <strong v-else-if="segment.kind === 'bold'" class="message-bold-text">{{ segment.value }}</strong>
                                 <em v-else-if="segment.kind === 'italic'" class="message-italic-text">{{ segment.value }}</em>
                                 <s v-else-if="segment.kind === 'strikethrough'" class="message-strikethrough-text">{{ segment.value }}</s>
@@ -539,6 +544,7 @@
                             >
                               <template v-for="(segment, segmentIndex) in getInlineSegments(cell)" :key="`td-seg-${blockIndex}-${rowIndex}-${cellIndex}-${segmentIndex}`">
                                 <span v-if="segment.kind === 'text'">{{ segment.value }}</span>
+                                <span v-else-if="segment.kind === 'math'" class="message-math" :class="{ 'message-math-display': segment.displayMode }" v-html="renderInlineMathAsHtml(segment)" />
                                 <strong v-else-if="segment.kind === 'bold'" class="message-bold-text">{{ segment.value }}</strong>
                                 <em v-else-if="segment.kind === 'italic'" class="message-italic-text">{{ segment.value }}</em>
                                 <s v-else-if="segment.kind === 'strikethrough'" class="message-strikethrough-text">{{ segment.value }}</s>
@@ -569,6 +575,7 @@
                         </tbody>
                       </table>
                     </div>
+                    <div v-else-if="block.kind === 'mathBlock'" class="message-math message-math-display" v-html="renderMathToHtml(block.value, true)" />
                     <div v-else-if="block.kind === 'codeBlock'" class="message-code-block">
                       <div v-if="block.language" class="message-code-language">{{ block.language }}</div>
                       <pre class="message-code-pre"><code class="hljs" v-html="renderCachedHighlightedCodeAsHtml(block.language, block.value)"></code></pre>
@@ -918,6 +925,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { readDisplayMathBlock, renderMathToHtml, splitMathSegments } from './markdownMath'
+import 'katex/dist/katex.min.css'
 import type { UiFileChange, UiLiveOverlay, UiMessage, UiPlanStep, UiServerRequest } from '../../types/codex'
 import { updateThreadFileChanges } from '../../api/codexGateway'
 import { useFeedbackDiagnostics } from '../../composables/useFeedbackDiagnostics'
@@ -1359,6 +1368,7 @@ type InlineSegment =
   | { kind: 'italic'; value: string }
   | { kind: 'strikethrough'; value: string }
   | { kind: 'code'; value: string }
+  | { kind: 'math'; value: string; displayMode: boolean; formats?: Array<'bold' | 'italic' | 'strikethrough'> }
   | { kind: 'url'; value: string; href: string }
   | { kind: 'file'; value: string; path: string; displayPath: string; downloadName: string }
 type TaskListItem = {
@@ -1379,6 +1389,7 @@ type MessageBlock =
   | { kind: 'orderedList'; items: ListItem[]; start: number }
   | { kind: 'table'; headers: string[]; rows: string[][]; alignments: TableAlignment[] }
   | { kind: 'codeBlock'; language: string; value: string }
+  | { kind: 'mathBlock'; value: string }
   | { kind: 'thematicBreak' }
   | { kind: 'image'; url: string; alt: string; markdown: string }
 
@@ -2496,21 +2507,26 @@ function applyDelimitedMarkersAcrossTextSegments(
 ): InlineSegment[] {
   const output: InlineSegment[] = []
   let isOpen = false
-  let buffer = ''
+  let buffer: InlineSegment[] = []
 
-  const pushText = (value: string): void => {
-    if (!value) return
-    output.push({ kind: 'text', value })
+  const pushText = (value: string, target = output): void => {
+    if (value) target.push({ kind: 'text', value })
+  }
+  const flushLiteral = (): void => {
+    pushText(options.marker)
+    output.push(...buffer)
+    buffer = []
+    isOpen = false
   }
 
   for (const segment of segments) {
     if (segment.kind !== 'text') {
-      if (isOpen) {
-        pushText(`${options.marker}${buffer}`)
-        isOpen = false
-        buffer = ''
+      if (isOpen && segment.kind === 'math') {
+        buffer.push(segment)
+      } else {
+        if (isOpen) flushLiteral()
+        output.push(segment)
       }
-      output.push(segment)
       continue
     }
 
@@ -2518,38 +2534,30 @@ function applyDelimitedMarkersAcrossTextSegments(
     while (remaining.length > 0) {
       const markerIndex = remaining.indexOf(options.marker)
       if (markerIndex < 0) {
-        if (isOpen) buffer += remaining
-        else pushText(remaining)
+        pushText(remaining, isOpen ? buffer : output)
         break
       }
-
-      const before = remaining.slice(0, markerIndex)
-      if (isOpen) buffer += before
-      else pushText(before)
-
+      pushText(remaining.slice(0, markerIndex), isOpen ? buffer : output)
       remaining = remaining.slice(markerIndex + options.marker.length)
       if (isOpen) {
-        const content = buffer
-        if (
-          content.length > 0 &&
-          (options.isValidContent ? options.isValidContent(content) : true)
-        ) {
-          output.push({ kind: options.kind, value: content })
+        // A formula is content, even when surrounded by Markdown emphasis.
+        const content = buffer.map((part) => part.kind === 'math' ? 'x' : part.value).join('')
+        if (content.length > 0 && (!options.isValidContent || options.isValidContent(content))) {
+          output.push(...buffer.map((part): InlineSegment => part.kind === 'math'
+            ? { ...part, formats: [...(part.formats ?? []), options.kind] }
+            : { kind: options.kind, value: part.value }))
+          buffer = []
+          isOpen = false
         } else {
-          pushText(`${options.marker}${content}${options.marker}`)
+          flushLiteral()
+          pushText(options.marker)
         }
-        buffer = ''
-        isOpen = false
       } else {
         isOpen = true
       }
     }
   }
-
-  if (isOpen) {
-    pushText(`${options.marker}${buffer}`)
-  }
-
+  if (isOpen) flushLiteral()
   return output
 }
 
@@ -2835,7 +2843,19 @@ function getInlineSegments(text: string): InlineSegment[] {
     inlineSegmentCache.set(text, cached)
     return cached
   }
-  return setBoundedCacheEntry(inlineSegmentCache, text, parseInlineSegmentsUncached(text), INLINE_SEGMENT_CACHE_LIMIT)
+  const segments = splitMathSegments(text).flatMap<InlineSegment>((segment) => (
+    segment.kind === 'math' ? [segment] : parseInlineSegmentsUncached(segment.value)
+  ))
+  if (segments.some((segment) => segment.kind === 'math')) {
+    const merged: InlineSegment[] = []
+    for (const segment of segments) {
+      const previous = merged[merged.length - 1]
+      if (previous?.kind === 'text' && segment.kind === 'text') previous.value += segment.value
+      else merged.push({ ...segment })
+    }
+    return setBoundedCacheEntry(inlineSegmentCache, text, applyInlineMarkdownMarkers(merged), INLINE_SEGMENT_CACHE_LIMIT)
+  }
+  return setBoundedCacheEntry(inlineSegmentCache, text, segments, INLINE_SEGMENT_CACHE_LIMIT)
 }
 
 function toRenderableImageUrl(value: string): string {
@@ -3076,11 +3096,26 @@ function splitMarkdownTableRow(line: string): string[] | null {
   if (content.startsWith('|')) content = content.slice(1)
   if (content.endsWith('|')) content = content.slice(0, -1)
 
+  // Pipes inside a formula belong to TeX, not the surrounding Markdown table.
+  const mathAtOffset = new Map<number, string>()
+  let offset = 0
+  for (const segment of splitMathSegments(content)) {
+    const raw = segment.kind === 'math' ? segment.raw : segment.value
+    if (segment.kind === 'math') mathAtOffset.set(offset, raw)
+    offset += raw.length
+  }
+
   const cells: string[] = []
   let current = ''
   let codeFenceLength = 0
 
   for (let index = 0; index < content.length; index += 1) {
+    const math = mathAtOffset.get(index)
+    if (math) {
+      current += math
+      index += math.length - 1
+      continue
+    }
     const character = content[index]
 
     if (character === '\\' && content[index + 1] === '|') {
@@ -3286,6 +3321,23 @@ function readListItems(
     const children: MessageBlock[] = []
     index += 1
 
+    if (/^(\$\$|\\\[)/u.test(itemValue.text)) {
+      const mathLines = [itemValue.text]
+      let nextIndex = index
+      while (nextIndex < lines.length) {
+        const line = lines[nextIndex]
+        if (!isBlankMarkdownLine(line) && leadingIndentWidth(line) <= baseIndent) break
+        mathLines.push(stripIndentedContent(line, baseIndent + 1))
+        nextIndex += 1
+      }
+      const math = readDisplayMathBlock(mathLines, 0)
+      if (math) {
+        paragraphs.length = 0
+        children.push({ kind: 'mathBlock', value: math.value })
+        index += math.nextIndex - 1
+      }
+    }
+
     while (index < lines.length) {
       if (isBlankMarkdownLine(lines[index])) {
         const nextNonBlankIndex = findNextNonBlankLineIndex(lines, index + 1)
@@ -3359,6 +3411,13 @@ function parseTextBlocks(text: string): MessageBlock[] {
   while (index < lines.length) {
     if (isBlankMarkdownLine(lines[index])) {
       index += 1
+      continue
+    }
+
+    const math = readDisplayMathBlock(lines, index)
+    if (math) {
+      blocks.push({ kind: 'mathBlock', value: math.value })
+      index = math.nextIndex
       continue
     }
 
@@ -3474,6 +3533,7 @@ function parseTextBlocks(text: string): MessageBlock[] {
     while (index < lines.length) {
       if (isBlankMarkdownLine(lines[index])) break
       if (
+        readDisplayMathBlock(lines, index) ||
         readFenceStart(lines[index]) ||
         isThematicBreakLine(lines[index]) ||
         readHeading(lines[index]) ||
@@ -3641,11 +3701,24 @@ function renderCachedHighlightedCodeAsHtml(language: string, value: string): str
   )
 }
 
+function renderInlineMathAsHtml(segment: Extract<InlineSegment, { kind: 'math' }>): string {
+  let html = renderMathToHtml(segment.value, segment.displayMode)
+  for (const format of segment.formats ?? []) {
+    const tag = format === 'bold' ? 'strong' : format === 'italic' ? 'em' : 's'
+    html = `<${tag}>${html}</${tag}>`
+  }
+  return html
+}
+
 function renderInlineSegmentsAsHtml(text: string): string {
   return getInlineSegments(text)
     .map((segment) => {
       if (segment.kind === 'text') {
         return escapeHtml(segment.value)
+      }
+      if (segment.kind === 'math') {
+        const classes = segment.displayMode ? 'message-math message-math-display' : 'message-math'
+        return `<span class="${classes}">${renderInlineMathAsHtml(segment)}</span>`
       }
       if (segment.kind === 'bold') {
         return `<strong class="message-bold-text">${escapeHtml(segment.value)}</strong>`
@@ -3733,6 +3806,9 @@ function renderMessageBlockAsHtml(block: MessageBlock): string {
       .join('')
     const body = rows ? `<tbody>${rows}</tbody>` : ''
     return `<div class="message-table-wrap"><table class="message-table"><thead><tr>${headerCells}</tr></thead>${body}</table></div>`
+  }
+  if (block.kind === 'mathBlock') {
+    return `<div class="message-math message-math-display">${renderMathToHtml(block.value, true)}</div>`
   }
   if (block.kind === 'codeBlock') {
     const language = block.language

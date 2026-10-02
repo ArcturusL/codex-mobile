@@ -8,6 +8,7 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
+| [LaTeX math in conversation messages](latex-math-rendering.md) |
 | [Composer skill layout and file search feedback](composer-search-feedback.md) |
 | [Codex thread deep links render as local web thread URLs](codex-thread-deep-links-render-as-local-web-thread-urls.md) |
 | [Bold-wrapped Markdown links render without literal markers](bold-wrapped-markdown-links-render-without-literal-markers.md) |

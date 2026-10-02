@@ -85,6 +85,9 @@ beforeEach(() => {
   gatewayMocks.getThreadQueueState.mockResolvedValue({})
   gatewayMocks.getThreadTitleCache.mockResolvedValue({ titles: {} })
   gatewayMocks.getWorkspaceRootsState.mockRejectedValue(new Error('no workspace roots state'))
+  gatewayMocks.generateThreadTitle.mockReset().mockResolvedValue('')
+  gatewayMocks.renameThread.mockReset().mockResolvedValue(undefined)
+  gatewayMocks.persistThreadTitle.mockReset().mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -1205,6 +1208,184 @@ describe('provider model selection', () => {
     await state.ensureThreadMessagesLoaded('missing-thread', { silent: true })
     await state.loadMessages('missing-thread')
     expect(gatewayMocks.resumeThread).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('automatic thread titles', () => {
+  async function startConversation(text = 'Build a todo app', imageUrls: string[] = []) {
+    installTestWindow()
+    let notify: (notification: { method: string; params?: unknown }) => void = () => {}
+    gatewayMocks.subscribeCodexNotifications.mockImplementation((handler) => {
+      notify = handler
+      return vi.fn()
+    })
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({ groups: [], nextCursor: null })
+    gatewayMocks.getAvailableCollaborationModes.mockResolvedValue([{ value: 'default', label: 'Default' }])
+    gatewayMocks.getSkillsList.mockResolvedValue([])
+    gatewayMocks.getAccountRateLimits.mockResolvedValue(null)
+    gatewayMocks.getPendingServerRequests.mockResolvedValue([])
+    gatewayMocks.getCurrentModelConfig.mockResolvedValue({
+      model: 'gpt-5.5', providerId: 'openai', reasoningEffort: 'medium', speedMode: 'standard',
+    })
+    gatewayMocks.getAvailableModelIds.mockResolvedValue(['gpt-5.5', 'gpt-5.4-mini'])
+    gatewayMocks.startThread.mockResolvedValue({
+      threadId: 'title-thread', model: 'gpt-5.4-mini', modelProvider: 'openai',
+    })
+    gatewayMocks.startThreadTurn.mockResolvedValue('turn-1')
+    gatewayMocks.resumeThread.mockResolvedValue(null)
+    gatewayMocks.getThreadDetail.mockImplementation(async (threadId: string) => ({
+      model: threadId === 'title-thread' ? 'gpt-5.4-mini' : 'big-pickle',
+      modelProvider: threadId === 'title-thread' ? 'openai' : 'opencode-zen',
+      messages: [],
+      inProgress: false,
+      activeTurnId: '',
+      turnIndexByTurnId: {},
+      hasMoreOlder: false,
+    }))
+
+    const state = useDesktopState()
+    await state.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
+    state.startPolling()
+    await state.sendMessageToNewThread(text, '/tmp/project', imageUrls)
+    const complete = (status = 'completed') => notify({
+      method: 'turn/completed',
+      params: { threadId: 'title-thread', turn: { id: 'turn-1', status } },
+    })
+    return { state, notify, complete }
+  }
+
+  it('waits for a successful reply, then renames and persists a title using both sides of the conversation', async () => {
+    gatewayMocks.generateThreadTitle.mockResolvedValue('Todo app implementation')
+    const { state, notify, complete } = await startConversation()
+    expect(gatewayMocks.generateThreadTitle).not.toHaveBeenCalled()
+
+    notify({
+      method: 'item/completed',
+      params: {
+        threadId: 'title-thread',
+        item: { id: 'assistant-1', type: 'agentMessage', text: 'Created the todo app.' },
+      },
+    })
+    expect(gatewayMocks.generateThreadTitle).not.toHaveBeenCalled()
+    complete()
+
+    expect(gatewayMocks.generateThreadTitle).toHaveBeenCalledWith(
+      'User: Build a todo app\nAssistant: Created the todo app.',
+      '/tmp/project',
+      { threadId: 'title-thread', model: 'gpt-5.4-mini', modelProvider: 'codex' },
+    )
+    await vi.waitFor(() => {
+      expect(gatewayMocks.persistThreadTitle).toHaveBeenCalledWith('title-thread', 'Todo app implementation')
+    })
+    expect(gatewayMocks.renameThread).toHaveBeenCalledWith('title-thread', 'Todo app implementation')
+    expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('Todo app implementation')
+  })
+
+  it('uses the completed conversation model and provider after another thread is selected', async () => {
+    const { state, complete } = await startConversation()
+    state.primeSelectedThread('other-thread')
+    await state.loadMessages('other-thread')
+    expect(state.selectedModelId.value).toBe('big-pickle')
+
+    complete()
+
+    expect(gatewayMocks.generateThreadTitle).toHaveBeenCalledWith(
+      expect.stringContaining('Build a todo app'),
+      '/tmp/project',
+      { threadId: 'title-thread', model: 'gpt-5.4-mini', modelProvider: 'codex' },
+    )
+  })
+
+  it('uses the final background reply to title an image-only conversation after switching threads', async () => {
+    const { state, notify, complete } = await startConversation('', ['https://example.test/cat.png'])
+    state.primeSelectedThread('other-thread')
+    await state.loadMessages('other-thread')
+    expect(state.selectedModelId.value).toBe('big-pickle')
+    notify({
+      method: 'item/completed',
+      params: {
+        threadId: 'title-thread',
+        item: { id: 'assistant-1', type: 'agentMessage', text: 'The photo shows an orange cat.' },
+      },
+    })
+    expect(gatewayMocks.generateThreadTitle).not.toHaveBeenCalled()
+
+    complete()
+
+    expect(gatewayMocks.generateThreadTitle).toHaveBeenCalledExactlyOnceWith(
+      'User: \nAssistant: The photo shows an orange cat.',
+      '/tmp/project',
+      { threadId: 'title-thread', model: 'gpt-5.4-mini', modelProvider: 'codex' },
+    )
+  })
+
+  it('deduplicates completion events while generating and after the title is saved', async () => {
+    let resolveTitle!: (title: string) => void
+    gatewayMocks.generateThreadTitle.mockReturnValue(new Promise<string>((resolve) => { resolveTitle = resolve }))
+    const { complete } = await startConversation()
+
+    complete()
+    complete()
+    expect(gatewayMocks.generateThreadTitle).toHaveBeenCalledTimes(1)
+    resolveTitle('Todo app')
+    await vi.waitFor(() => expect(gatewayMocks.persistThreadTitle).toHaveBeenCalledTimes(1))
+    complete()
+    expect(gatewayMocks.generateThreadTitle).toHaveBeenCalledTimes(1)
+    expect(gatewayMocks.renameThread).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['failed', 'interrupted'])('does not generate a title for a %s turn', async (status) => {
+    const { complete } = await startConversation()
+    complete(status)
+    expect(gatewayMocks.generateThreadTitle).not.toHaveBeenCalled()
+    expect(gatewayMocks.renameThread).not.toHaveBeenCalled()
+  })
+
+  it.each(['empty result', 'request failure'])('retries on a later completion after an %s', async (failure) => {
+    if (failure === 'empty result') gatewayMocks.generateThreadTitle.mockResolvedValueOnce('')
+    else gatewayMocks.generateThreadTitle.mockRejectedValueOnce(new Error('model unavailable'))
+    gatewayMocks.generateThreadTitle.mockResolvedValue('Todo app')
+    const { complete } = await startConversation()
+
+    complete()
+    await Promise.resolve()
+    expect(gatewayMocks.renameThread).not.toHaveBeenCalled()
+    complete()
+    await vi.waitFor(() => expect(gatewayMocks.persistThreadTitle).toHaveBeenCalledWith('title-thread', 'Todo app'))
+    expect(gatewayMocks.generateThreadTitle).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves an existing cached title', async () => {
+    gatewayMocks.getThreadTitleCache.mockResolvedValue({ titles: { 'title-thread': 'My project' } })
+    const { state, complete } = await startConversation()
+    complete()
+    expect(gatewayMocks.generateThreadTitle).not.toHaveBeenCalled()
+    expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('My project')
+  })
+
+  it.each(['completed', 'pending'])('preserves a %s manual rename while title generation is in flight', async (renameStatus) => {
+    let resolveTitle!: (title: string) => void
+    let resolveRename!: () => void
+    gatewayMocks.generateThreadTitle.mockReturnValue(new Promise<string>((resolve) => { resolveTitle = resolve }))
+    if (renameStatus === 'pending') {
+      gatewayMocks.renameThread.mockReturnValue(new Promise<void>((resolve) => { resolveRename = resolve }))
+    }
+    const { state, complete } = await startConversation()
+    complete()
+    const manualRename = state.renameThreadById('title-thread', 'My chosen title')
+    if (renameStatus === 'completed') await manualRename
+
+    resolveTitle('Generated title')
+    await Promise.resolve()
+    expect(gatewayMocks.renameThread).toHaveBeenCalledTimes(1)
+    expect(gatewayMocks.renameThread).toHaveBeenCalledWith('title-thread', 'My chosen title')
+    if (renameStatus === 'pending') {
+      expect(gatewayMocks.persistThreadTitle).not.toHaveBeenCalled()
+      resolveRename()
+      await manualRename
+    }
+    expect(gatewayMocks.persistThreadTitle).toHaveBeenCalledWith('title-thread', 'My chosen title')
+    expect(state.projectGroups.value[0]?.threads[0]?.title).toBe('My chosen title')
   })
 })
 

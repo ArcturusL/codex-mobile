@@ -1903,3 +1903,30 @@
     font-size: 16px !important;
   }
 }
+
+/* Math also appears in v-html list and plan content, so keep these rules global. */
+.conversation-root .message-math {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.15em 0;
+  vertical-align: middle;
+  white-space: normal;
+  overflow-wrap: normal;
+  color: inherit;
+}
+
+.conversation-root .message-math-display {
+  display: block;
+  min-width: 0;
+  padding: 0.4em 0;
+}
+
+.conversation-root .message-math .katex-display {
+  margin: 0.25em 0;
+}
+
+.conversation-root .message-math .katex-display > .katex {
+  white-space: nowrap;
+}
