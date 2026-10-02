@@ -1175,7 +1175,7 @@ describe('provider model selection', () => {
 })
 
 describe('automatic thread titles', () => {
-  async function startConversation() {
+  async function startConversation(text = 'Build a todo app', imageUrls: string[] = []) {
     installTestWindow()
     let notify: (notification: { method: string; params?: unknown }) => void = () => {}
     gatewayMocks.subscribeCodexNotifications.mockImplementation((handler) => {
@@ -1209,7 +1209,7 @@ describe('automatic thread titles', () => {
     const state = useDesktopState()
     await state.refreshAll({ includeSelectedThreadMessages: false, awaitAncillaryRefreshes: true })
     state.startPolling()
-    await state.sendMessageToNewThread('Build a todo app', '/tmp/project')
+    await state.sendMessageToNewThread(text, '/tmp/project', imageUrls)
     const complete = (status = 'completed') => notify({
       method: 'turn/completed',
       params: { threadId: 'title-thread', turn: { id: 'turn-1', status } },
@@ -1254,6 +1254,29 @@ describe('automatic thread titles', () => {
 
     expect(gatewayMocks.generateThreadTitle).toHaveBeenCalledWith(
       expect.stringContaining('Build a todo app'),
+      '/tmp/project',
+      { threadId: 'title-thread', model: 'gpt-5.4-mini', modelProvider: 'codex' },
+    )
+  })
+
+  it('uses the final background reply to title an image-only conversation after switching threads', async () => {
+    const { state, notify, complete } = await startConversation('', ['https://example.test/cat.png'])
+    state.primeSelectedThread('other-thread')
+    await state.loadMessages('other-thread')
+    expect(state.selectedModelId.value).toBe('big-pickle')
+    notify({
+      method: 'item/completed',
+      params: {
+        threadId: 'title-thread',
+        item: { id: 'assistant-1', type: 'agentMessage', text: 'The photo shows an orange cat.' },
+      },
+    })
+    expect(gatewayMocks.generateThreadTitle).not.toHaveBeenCalled()
+
+    complete()
+
+    expect(gatewayMocks.generateThreadTitle).toHaveBeenCalledExactlyOnceWith(
+      'User: \nAssistant: The photo shows an orange cat.',
       '/tmp/project',
       { threadId: 'title-thread', model: 'gpt-5.4-mini', modelProvider: 'codex' },
     )
