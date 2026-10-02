@@ -108,6 +108,7 @@ export type UiFileChange = {
   operation: UiFileChangeOperation
   movedToPath?: string | null
   diff: string
+  diffFormat?: 'unified'
   addedLineCount: number
   removedLineCount: number
 }
@@ -213,6 +214,7 @@ export type UiMessage = {
   fileAttachments?: UiFileAttachment[]
   fileChanges?: UiFileChange[]
   fileChangeStatus?: UiFileChangeStatus
+  fileChangeSource?: 'turnDiff'
   messageType?: string
   rawPayload?: string
   isUnhandled?: boolean

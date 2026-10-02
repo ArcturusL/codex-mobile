@@ -1,3 +1,5 @@
+import { mergeSessionFileChanges, readSessionFileChanges } from './sessionFileChanges'
+import { turnDiffItem } from '../shared/turnDiff'
 import { normalizePermissionMode, permissionModeParams, type PermissionMode } from '../shared/permissionMode'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -268,6 +270,7 @@ type SessionSkillInputCacheEntry = {
   size: number
   mtimeMs: number
   skillsByTurnId: Map<string, SessionRecoveredSkillInput[]>
+  fileChangesByTurnId: Map<string, Record<string, unknown>[]>
 }
 
 const SESSION_SKILL_INPUT_CACHE_LIMIT = 64
@@ -329,25 +332,27 @@ function buildSessionSkillInputsByTurn(sessionLogRaw: string): Map<string, Sessi
   return skillsByTurnId
 }
 
-async function readCachedSessionSkillInputsByTurn(sessionPath: string): Promise<Map<string, SessionRecoveredSkillInput[]>> {
+async function readCachedSessionHistory(sessionPath: string): Promise<SessionSkillInputCacheEntry> {
   const sessionStat = await stat(sessionPath)
   const cached = sessionSkillInputCache.get(sessionPath)
   if (cached && cached.size === sessionStat.size && cached.mtimeMs === sessionStat.mtimeMs) {
-    return cached.skillsByTurnId
+    return cached
   }
 
   const sessionLogRaw = await readFile(sessionPath, 'utf8')
   const skillsByTurnId = buildSessionSkillInputsByTurn(sessionLogRaw)
-  sessionSkillInputCache.set(sessionPath, {
+  const entry: SessionSkillInputCacheEntry = {
     size: sessionStat.size,
     mtimeMs: sessionStat.mtimeMs,
     skillsByTurnId,
-  })
+    fileChangesByTurnId: readSessionFileChanges(sessionLogRaw),
+  }
+  sessionSkillInputCache.set(sessionPath, entry)
   if (sessionSkillInputCache.size > SESSION_SKILL_INPUT_CACHE_LIMIT) {
     const oldestKey = sessionSkillInputCache.keys().next().value
     if (oldestKey) sessionSkillInputCache.delete(oldestKey)
   }
-  return skillsByTurnId
+  return entry
 }
 
 function mergeSessionSkillInputsIntoTurnsFromMap(
@@ -419,7 +424,7 @@ export function mergeSessionSkillInputsIntoTurns(turns: unknown[], sessionLogRaw
   return mergeSessionSkillInputsIntoTurnsFromMap(turns, buildSessionSkillInputsByTurn(sessionLogRaw))
 }
 
-async function mergeSessionSkillInputsIntoThreadResult(result: unknown): Promise<unknown> {
+async function mergeSessionHistoryIntoThreadResult(result: unknown): Promise<unknown> {
   const record = asRecord(result)
   const thread = asRecord(record?.thread)
   const turns = Array.isArray(thread?.turns) ? thread.turns : null
@@ -429,8 +434,10 @@ async function mergeSessionSkillInputsIntoThreadResult(result: unknown): Promise
   }
 
   try {
-    const skillsByTurnId = await readCachedSessionSkillInputsByTurn(sessionPath)
-    const mergedTurns = mergeSessionSkillInputsIntoTurnsFromMap(turns, skillsByTurnId)
+    const cached = await readCachedSessionHistory(sessionPath)
+    const mergedTurns = mergeSessionFileChanges(
+      mergeSessionSkillInputsIntoTurnsFromMap(turns, cached.skillsByTurnId), cached.fileChangesByTurnId,
+    )
     if (mergedTurns === turns) return result
     return {
       ...record,
@@ -6579,11 +6586,14 @@ class AppServerProcess {
   }
 
   private captureItemFromNotification(notification: { method: string; params: unknown }): void {
-    if (notification.method !== 'item/started' && notification.method !== 'item/completed') return
+    const isTurnDiff = notification.method === 'turn/diff/updated'
+    if (!isTurnDiff && notification.method !== 'item/started' && notification.method !== 'item/completed') return
 
     const params = asRecord(notification.params)
     if (!params) return
-    const item = asRecord(params.item)
+    const item = isTurnDiff && typeof params.turnId === 'string' && typeof params.diff === 'string'
+      ? turnDiffItem(params.turnId, params.diff)
+      : asRecord(params.item)
     if (!item) return
     const itemType = typeof item.type === 'string' ? item.type : ''
     if (!MERGEABLE_ITEM_TYPES.has(itemType)) return
@@ -6605,7 +6615,7 @@ class AppServerProcess {
       this.capturedItemsByThreadId.set(threadId, threadItems)
     }
 
-    const isCompleted = notification.method === 'item/completed'
+    const isCompleted = isTurnDiff || notification.method === 'item/completed'
     const existing = threadItems.get(itemId)
 
     if (existing && existing.completed && !isCompleted) return
@@ -6645,15 +6655,16 @@ class AppServerProcess {
       const existingItems = Array.isArray(turnRecord.items) ? (turnRecord.items as Record<string, unknown>[]) : []
       const existingIds = new Set(existingItems.map((it) => (typeof it.id === 'string' ? it.id : '')).filter(Boolean))
 
+      const aggregateItems = new Map(captured.filter((c) => c.data.isTurnDiff === true).map((c) => [c.id, c.data]))
       const newItems = captured
         .filter((c) => !existingIds.has(c.id))
         .map((c) => c.data)
 
-      if (newItems.length === 0) return turn
+      if (newItems.length === 0 && aggregateItems.size === 0) return turn
 
       return {
         ...turnRecord,
-        items: [...existingItems, ...newItems],
+        items: [...existingItems.map((item) => aggregateItems.get(String(item.id)) ?? item), ...newItems],
       }
     })
   }
@@ -8029,9 +8040,16 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           ? mergeImportedThreadsIntoThreadListResult(errorMergedResult)
           : errorMergedResult
         const sanitizedResult = await sanitizeThreadTurnsInlinePayloads(body.method, listMergedResult)
-        const result = THREAD_METHODS_WITH_TURNS.has(body.method)
-          ? await mergeSessionSkillInputsIntoThreadResult(sanitizedResult)
+        let result = THREAD_METHODS_WITH_TURNS.has(body.method)
+          ? await mergeSessionHistoryIntoThreadResult(sanitizedResult)
           : sanitizedResult
+        if (THREAD_METHODS_WITH_TURNS.has(body.method)) {
+          const record = asRecord(result)
+          const thread = asRecord(record?.thread)
+          if (record && thread && typeof thread.id === 'string' && Array.isArray(thread.turns)) {
+            result = { ...record, thread: { ...thread, turns: appServer.mergeItemsIntoTurns(thread.id, thread.turns) } }
+          }
+        }
 
 	        if (THREAD_METHODS_WITH_THREAD_SNAPSHOT.has(body.method)) {
 	          const rpcRecord = asRecord(result)
@@ -8086,7 +8104,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
           const endIndex = beforeIndex
           const startIndex = Math.max(0, endIndex - limit)
-          const pageTurns = turns.slice(startIndex, endIndex)
+          const pageTurns = appServer.mergeItemsIntoTurns(threadId, turns.slice(startIndex, endIndex))
           const pagedResult = {
             ...record,
             thread: {
@@ -8095,7 +8113,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
             },
           }
           const sanitized = await sanitizeThreadTurnsInlinePayloads('thread/read', pagedResult)
-          const result = await mergeSessionSkillInputsIntoThreadResult(sanitized)
+          const result = await mergeSessionHistoryIntoThreadResult(sanitized)
 
           setJson(res, 200, {
             result,
@@ -8188,7 +8206,7 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
           if (sessionPath && isAbsolute(sessionPath) && sessionSize > 0) {
             try {
               const sessionLogRaw = await readFile(sessionPath, 'utf8')
-              turns = mergeSessionCommandsIntoTurns(turns, sessionLogRaw)
+              turns = mergeSessionFileChanges(mergeSessionCommandsIntoTurns(turns, sessionLogRaw), readSessionFileChanges(sessionLogRaw))
             } catch {
               // Session log not available — continue without command recovery
             }

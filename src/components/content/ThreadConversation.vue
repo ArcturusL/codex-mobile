@@ -135,28 +135,33 @@
         >
           <div class="message-stack" :data-role="message.role">
             <article class="message-body" :data-role="message.role">
-              <section v-if="readStandaloneFileChangeSummary(message)" class="file-change-summary-block">
-                <button
-                  type="button"
-                  class="cmd-row cmd-row-group cmd-compact file-change-summary-row"
-                  :class="{ 'cmd-expanded': isFileChangeSummaryExpanded(message) }"
-                  @click="toggleFileChangeSummary(message)"
-                >
-                  <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isFileChangeSummaryExpanded(message) }">▶</span>
-                  <span class="file-change-summary-label">
-                    {{ fileChangeSummaryLabel(readStandaloneFileChangeSummary(message)) }}
-                  </span>
-                  <span class="file-change-summary-status">
-                    <span
-                      v-for="part in fileChangeSummaryStatusParts(readStandaloneFileChangeSummary(message))"
-                      :key="`summary-status:${message.id}:${part.tone}:${part.label}`"
-                      class="file-change-signed-count"
-                      :data-tone="part.tone"
-                    >
-                      {{ part.label }}
+              <section v-if="readStandaloneFileChangeSummary(message)?.changes.length" class="file-change-summary-block">
+                <div class="file-change-summary-header">
+                  <button
+                    type="button"
+                    class="cmd-row cmd-row-group cmd-compact file-change-summary-row"
+                    :class="{ 'cmd-expanded': isFileChangeSummaryExpanded(message) }"
+                    @click="toggleFileChangeSummary(message)"
+                  >
+                    <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isFileChangeSummaryExpanded(message) }">▶</span>
+                    <span class="file-change-summary-label">
+                      {{ fileChangeSummaryLabel(readStandaloneFileChangeSummary(message)) }}
                     </span>
-                  </span>
-                </button>
+                    <span class="file-change-summary-status">
+                      <span
+                        v-for="part in fileChangeSummaryStatusParts(readStandaloneFileChangeSummary(message))"
+                        :key="`summary-status:${message.id}:${part.tone}:${part.label}`"
+                        class="file-change-signed-count"
+                        :data-tone="part.tone"
+                      >
+                        {{ part.label }}
+                      </span>
+                    </span>
+                  </button>
+                  <button type="button" class="file-change-review-button"
+                    aria-label="View diff for this turn"
+                    @click="openTurnDiffViewer(readStandaloneFileChangeSummary(message))">View diff</button>
+                </div>
                 <div class="cmd-group-wrap" :class="{ 'cmd-group-visible': isFileChangeSummaryExpanded(message) }">
                   <div class="file-change-panel-inner">
                     <ul class="file-change-list">
@@ -630,28 +635,33 @@
                 </a>
               </article>
 
-              <section v-if="readAnchoredFileChangeSummary(message)" class="file-change-summary-block file-change-summary-block-inline">
-                <button
-                  type="button"
-                  class="cmd-row cmd-row-group cmd-compact file-change-summary-row"
-                  :class="{ 'cmd-expanded': isFileChangeSummaryExpanded(message) }"
-                  @click="toggleFileChangeSummary(message)"
-                >
-                  <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isFileChangeSummaryExpanded(message) }">▶</span>
-                  <span class="file-change-summary-label">
-                    {{ fileChangeSummaryLabel(readAnchoredFileChangeSummary(message)) }}
-                  </span>
-                  <span class="file-change-summary-status">
-                    <span
-                      v-for="part in fileChangeSummaryStatusParts(readAnchoredFileChangeSummary(message))"
-                      :key="`summary-status:${message.id}:${part.tone}:${part.label}`"
-                      class="file-change-signed-count"
-                      :data-tone="part.tone"
-                    >
-                      {{ part.label }}
+              <section v-if="readAnchoredFileChangeSummary(message)?.changes.length" class="file-change-summary-block file-change-summary-block-inline">
+                <div class="file-change-summary-header">
+                  <button
+                    type="button"
+                    class="cmd-row cmd-row-group cmd-compact file-change-summary-row"
+                    :class="{ 'cmd-expanded': isFileChangeSummaryExpanded(message) }"
+                    @click="toggleFileChangeSummary(message)"
+                  >
+                    <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isFileChangeSummaryExpanded(message) }">▶</span>
+                    <span class="file-change-summary-label">
+                      {{ fileChangeSummaryLabel(readAnchoredFileChangeSummary(message)) }}
                     </span>
-                  </span>
-                </button>
+                    <span class="file-change-summary-status">
+                      <span
+                        v-for="part in fileChangeSummaryStatusParts(readAnchoredFileChangeSummary(message))"
+                        :key="`summary-status:${message.id}:${part.tone}:${part.label}`"
+                        class="file-change-signed-count"
+                        :data-tone="part.tone"
+                      >
+                        {{ part.label }}
+                      </span>
+                    </span>
+                  </button>
+                  <button type="button" class="file-change-review-button"
+                    aria-label="View diff for this turn"
+                    @click="openTurnDiffViewer(readAnchoredFileChangeSummary(message))">View diff</button>
+                </div>
                 <div class="cmd-group-wrap" :class="{ 'cmd-group-visible': isFileChangeSummaryExpanded(message) }">
                   <div class="file-change-panel-inner">
                     <ul class="file-change-list">
@@ -826,7 +836,7 @@
       </button>
     </div>
 
-    <div v-if="activeDiffViewerChange" class="diff-viewer-backdrop" @click="closeDiffViewer">
+    <dialog v-if="activeDiffViewerChange" ref="diffDialogRef" class="diff-viewer-backdrop" aria-label="Changes in this turn" @cancel.prevent="closeDiffViewer" @click.self="closeDiffViewer">
       <div class="diff-viewer-shell" @click.stop>
         <aside class="diff-viewer-sidebar">
           <div class="diff-viewer-sidebar-header">
@@ -875,7 +885,7 @@
 
           <div v-if="!hasDiffViewerContent(activeDiffViewerChange)" class="diff-viewer-empty">
             <p class="diff-viewer-empty-title">No diff available</p>
-            <p class="diff-viewer-empty-text">This summary was restored from the final answer text, but the thread history does not include patch diff content for this file.</p>
+            <p class="diff-viewer-empty-text">The thread history does not contain a text diff for this file. Binary files and metadata-only changes may have no text preview.</p>
           </div>
 
           <div v-else class="diff-viewer-panel">
@@ -899,7 +909,7 @@
         </section>
 
       </div>
-    </div>
+    </dialog>
   </section>
 </template>
 
@@ -1041,7 +1051,7 @@ function isFileChangeMessage(message: UiMessage): boolean {
   return message.messageType === 'fileChange'
     && message.fileChangeStatus === 'completed'
     && Array.isArray(message.fileChanges)
-    && message.fileChanges.length > 0
+    && (message.fileChanges.length > 0 || message.fileChangeSource === 'turnDiff')
 }
 
 function isCopyableAssistantMessage(message: UiMessage): boolean {
@@ -1258,7 +1268,20 @@ function openDiffViewer(summary: TurnFileChangeSummary | null, change: UiFileCha
   activeDiffViewerChangeKey.value = fileChangeKey(change)
 }
 
+function openTurnDiffViewer(summary: TurnFileChangeSummary | null): void {
+  const change = summary?.changes[0]
+  if (summary && change) openDiffViewer(summary, change)
+}
+
+const diffDialogRef = ref<HTMLDialogElement | null>(null)
+watch(activeDiffViewerChangeKey, async (key) => {
+  if (!key) return
+  await nextTick()
+  if (diffDialogRef.value && !diffDialogRef.value.open) diffDialogRef.value.showModal()
+})
+
 function closeDiffViewer(): void {
+  diffDialogRef.value?.close()
   activeDiffViewerSummary.value = null
   activeDiffViewerChangeKey.value = ''
 }
@@ -1482,7 +1505,7 @@ type McpElicitationField = {
 type TurnFileChangeSummary = {
   changes: UiFileChange[]
   sourceMessageIds: string[]
-  source: 'assistant' | 'metadata'
+  source: 'assistant' | 'metadata' | 'turnDiff'
   turnId: string
 }
 type DiffViewerLineKind = 'meta' | 'hunk' | 'add' | 'remove' | 'context'
@@ -1892,6 +1915,7 @@ function mergeFileChangeEntry(first: UiFileChange, second: UiFileChange): UiFile
     operation,
     movedToPath: second.movedToPath ?? first.movedToPath ?? null,
     diff: mergeFileChangeDiff(first.diff, second.diff),
+    diffFormat: second.diffFormat ?? first.diffFormat,
     addedLineCount: first.addedLineCount + second.addedLineCount,
     removedLineCount: first.removedLineCount + second.removedLineCount,
   }
@@ -1914,6 +1938,12 @@ function aggregateFileChanges(changes: UiFileChange[]): UiFileChange[] {
     byPath.set(key, previous ? mergeFileChangeEntry(previous, change) : { ...change })
   }
   return Array.from(byPath.values()).sort(compareFileChanges)
+}
+
+function summarizeTurnFileChanges(messages: UiMessage[]): UiFileChange[] {
+  // A turn diff is a replacement snapshot, including an empty diff after reverting edits.
+  const aggregate = [...messages].reverse().find((message) => message.fileChangeSource === 'turnDiff')
+  return aggregate ? aggregate.fileChanges ?? [] : aggregateFileChanges(messages.flatMap((message) => message.fileChanges ?? []))
 }
 
 const anchoredFileChangeSummaryByAnchorId = computed<Record<string, TurnFileChangeSummary>>(() => {
@@ -1947,9 +1977,9 @@ const anchoredFileChangeSummaryByAnchorId = computed<Record<string, TurnFileChan
     if (!anchorId) continue
     const assistantTurnId = assistantSummaryByAnchorId.get(anchorId)?.turnId ?? ''
     summaries[anchorId] = {
-      changes: aggregateFileChanges(messages.flatMap((message) => message.fileChanges ?? [])),
+      changes: summarizeTurnFileChanges(messages),
       sourceMessageIds: messages.map((message) => message.id),
-      source: 'metadata',
+      source: messages.some((message) => message.fileChangeSource === 'turnDiff') ? 'turnDiff' : 'metadata',
       turnId: messages.find((message) => typeof message.turnId === 'string' && message.turnId.length > 0)?.turnId ?? assistantTurnId,
     }
   }
@@ -1985,9 +2015,9 @@ const standaloneFileChangeSummaryByMessageId = computed<Record<string, TurnFileC
     const visibleMessage = messages[messages.length - 1]
     if (!visibleMessage) continue
     summaries[visibleMessage.id] = {
-      changes: aggregateFileChanges(messages.flatMap((message) => message.fileChanges ?? [])),
+      changes: summarizeTurnFileChanges(messages),
       sourceMessageIds: messages.map((message) => message.id),
-      source: 'metadata',
+      source: messages.some((message) => message.fileChangeSource === 'turnDiff') ? 'turnDiff' : 'metadata',
       turnId: visibleMessage.turnId ?? messages.find((message) => typeof message.turnId === 'string' && message.turnId.length > 0)?.turnId ?? '',
     }
   }
@@ -2025,7 +2055,7 @@ function fileChangeActionKey(summary: TurnFileChangeSummary | null): string {
 }
 
 function isFileChangeActionable(summary: TurnFileChangeSummary | null): boolean {
-  return fileChangeActionKey(summary).length > 0
+  return summary?.source !== 'turnDiff' && fileChangeActionKey(summary).length > 0
 }
 
 function fileChangeActionStatus(summary: TurnFileChangeSummary | null): 'idle' | 'undoing' | 'redoing' | 'undone' | 'redone' {
@@ -2227,7 +2257,7 @@ function inferDiffViewerLanguage(change: UiFileChange): string {
 }
 
 function hasStructuredUnifiedDiff(change: UiFileChange): boolean {
-  return change.operation === 'update' && /^diff --git |^@@ |^--- |^\+\+\+ |^[ +-]|^\*\*\* (Move to:|End of File)/mu.test(change.diff)
+  return change.diffFormat === 'unified' || change.operation === 'update' && /^diff --git |^@@ |^--- |^\+\+\+ |^[ +-]|^\*\*\* (Move to:|End of File)/mu.test(change.diff)
 }
 
 function buildSyntheticDiffLines(change: UiFileChange): DiffViewerLine[] {
@@ -2255,9 +2285,12 @@ function buildUnifiedDiffLines(change: UiFileChange): DiffViewerLine[] {
   const output: DiffViewerLine[] = []
   let oldLine = 0
   let newLine = 0
+  let inHunk = false
 
   for (const [index, line] of lines.entries()) {
     const hunkMatch = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/u)
+    if (line.startsWith('@@')) inHunk = true
+    if (line.startsWith('diff --git ')) inHunk = false
     if (hunkMatch) {
       oldLine = Number(hunkMatch[1])
       newLine = Number(hunkMatch[2])
@@ -2271,7 +2304,7 @@ function buildUnifiedDiffLines(change: UiFileChange): DiffViewerLine[] {
       continue
     }
 
-    if (line.startsWith('+') && !line.startsWith('+++')) {
+    if (line.startsWith('+') && (inHunk || !line.startsWith('+++ '))) {
       output.push({
         key: `${fileChangeKey(change)}:add:${index}`,
         kind: 'add',
@@ -2283,7 +2316,7 @@ function buildUnifiedDiffLines(change: UiFileChange): DiffViewerLine[] {
       continue
     }
 
-    if (line.startsWith('-') && !line.startsWith('---')) {
+    if (line.startsWith('-') && (inHunk || !line.startsWith('--- '))) {
       output.push({
         key: `${fileChangeKey(change)}:remove:${index}`,
         kind: 'remove',
@@ -5397,8 +5430,16 @@ onBeforeUnmount(() => {
   @apply mt-4;
 }
 
+.file-change-summary-header {
+  @apply flex items-center gap-2;
+}
+
+.file-change-review-button {
+  @apply shrink-0 rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100;
+}
+
 .file-change-summary-row {
-  @apply border-dashed;
+  @apply min-w-0 flex-1 border-dashed;
 }
 
 .file-change-summary-label {
@@ -5490,7 +5531,11 @@ onBeforeUnmount(() => {
 }
 
 .diff-viewer-backdrop {
-  @apply fixed inset-0 z-50 bg-black/45 p-6 flex items-center justify-center;
+  @apply fixed inset-0 m-auto max-h-none max-w-none border-0 bg-transparent p-0;
+}
+
+.diff-viewer-backdrop::backdrop {
+  @apply bg-black/45;
 }
 
 .diff-viewer-shell {

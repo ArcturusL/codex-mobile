@@ -1,3 +1,4 @@
+import { turnDiffMessage } from '../shared/turnDiff'
 import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -1673,5 +1674,41 @@ describe('remembered composer choices', () => {
     reloaded.primeSelectedThread('remember-a')
     await reloaded.loadMessages('remember-a')
     expect(reloaded.selectedModelId.value).toBe('gpt-5.4-mini')
+  })
+})
+
+
+describe('turn diff notifications', () => {
+  it('replaces snapshots and retains each turn across stale history and new turns', async () => {
+    installTestWindow()
+    let notify: (event: { method: string; params: unknown }) => void = () => {}
+    gatewayMocks.subscribeCodexNotifications.mockImplementation((handler) => { notify = handler; return vi.fn() })
+    gatewayMocks.getPendingServerRequests.mockResolvedValue([])
+    gatewayMocks.resumeThread.mockResolvedValue(null)
+    const detail = { messages: [] as UiMessage[], inProgress: true, activeTurnId: 'one', turnIndexByTurnId: { one: 0 }, hasMoreOlder: false }
+    gatewayMocks.getThreadDetail.mockResolvedValue(detail)
+    const state = useDesktopState()
+    state.primeSelectedThread('diff-thread')
+    await state.loadMessages('diff-thread')
+    state.startPolling()
+    const diff = 'diff --git a/notes.md b/notes.md\n--- a/notes.md\n+++ b/notes.md\n@@ -1 +1 @@\n-a\n+b\n'
+    const emit = (value: string) => notify({ method: 'turn/diff/updated', params: { threadId: 'diff-thread', turnId: 'one', diff: value } })
+    emit(diff)
+    emit(diff.replace('+b', '+c'))
+    expect(state.messages.value.filter((m) => m.fileChangeSource === 'turnDiff')).toHaveLength(1)
+    expect(state.messages.value[0].fileChanges?.[0].diff).toContain('+c')
+    // A stale server snapshot must not overwrite a newer notification or duplicate it.
+    detail.messages = [turnDiffMessage('one', diff, 0)]
+    await state.loadMessages('diff-thread', { force: true })
+    expect(state.messages.value.filter((m) => m.fileChangeSource === 'turnDiff')).toHaveLength(1)
+    expect(state.messages.value[0].fileChanges?.[0].diff).toContain('+c')
+    notify({ method: 'turn/started', params: { threadId: 'diff-thread', turn: { id: 'two', status: 'inProgress' } } })
+    expect(state.messages.value.find((m) => m.turnId === 'one')?.fileChanges?.[0].diff).toContain('+c')
+    emit('')
+    expect(state.messages.value.find((m) => m.turnId === 'one')?.fileChanges).toEqual([])
+    detail.messages = [turnDiffMessage('one', '', 0)]
+    await state.loadMessages('diff-thread', { force: true })
+    expect(state.messages.value.filter((m) => m.fileChangeSource === 'turnDiff')).toHaveLength(1)
+    state.stopPolling()
   })
 })

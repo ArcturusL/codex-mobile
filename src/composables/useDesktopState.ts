@@ -1,3 +1,4 @@
+import { turnDiffMessage } from '../shared/turnDiff'
 import { normalizePermissionMode, type PermissionMode } from '../shared/permissionMode'
 import { computed, ref, watch } from 'vue'
 import {
@@ -646,6 +647,7 @@ function areMessageFieldsEqual(first: UiMessage, second: UiMessage): boolean {
     areStringArraysEqual(first.images, second.images) &&
     areUiFileChangesEqual(first.fileChanges, second.fileChanges) &&
     first.fileChangeStatus === second.fileChangeStatus &&
+    first.fileChangeSource === second.fileChangeSource &&
     first.messageType === second.messageType &&
     first.rawPayload === second.rawPayload &&
     first.isUnhandled === second.isUnhandled &&
@@ -718,6 +720,7 @@ function areUiFileChangesEqual(first?: UiFileChange[], second?: UiFileChange[]):
       firstChange.operation !== secondChange.operation ||
       firstChange.movedToPath !== secondChange.movedToPath ||
       firstChange.diff !== secondChange.diff ||
+      firstChange.diffFormat !== secondChange.diffFormat ||
       firstChange.addedLineCount !== secondChange.addedLineCount ||
       firstChange.removedLineCount !== secondChange.removedLineCount
     ) {
@@ -1665,12 +1668,12 @@ export function useDesktopState() {
     const liveActivities = liveActivitiesByThreadId.value[threadId] ?? []
     const liveFileChanges = liveFileChangeMessagesByThreadId.value[threadId] ?? []
     const persistedIds = new Set(persisted.map((message) => message.id))
-    const activityById = new Map(liveActivities.map((message) => [message.id, message]))
+    const activityById = new Map([...liveActivities, ...liveFileChanges].map((message) => [message.id, message]))
     const combined = [
       ...persisted.map((message) => activityById.get(message.id) ?? message),
       ...livePlan,
       ...liveActivities.filter((message) => !persistedIds.has(message.id)),
-      ...liveFileChanges,
+      ...liveFileChanges.filter((message) => !persistedIds.has(message.id)),
       ...liveAgent,
     ]
 
@@ -3799,7 +3802,8 @@ export function useDesktopState() {
   function removeLiveFileChangesPersistedIn(threadId: string, persistedMessages: UiMessage[]): void {
     const current = liveFileChangeMessagesByThreadId.value[threadId]
     if (!current || current.length === 0) return
-    const persistedIds = new Set(persistedMessages.map((message) => message.id))
+    const persistedById = new Map(persistedMessages.map((message) => [message.id, message]))
+    const persistedIds = new Set(persistedById.keys())
     const persistedTurnIds = new Set(
       persistedMessages
         .filter((message) => message.messageType === 'fileChange' && typeof message.turnId === 'string' && message.turnId.length > 0)
@@ -3810,11 +3814,15 @@ export function useDesktopState() {
         .filter((message) => message.messageType === 'fileChange' && typeof message.turnIndex === 'number')
         .map((message) => message.turnIndex as number),
     )
-    const next = current.filter((message) => (
-      !persistedIds.has(message.id)
-      && !(message.turnId && persistedTurnIds.has(message.turnId))
-      && !(typeof message.turnIndex === 'number' && persistedTurnIndices.has(message.turnIndex))
-    ))
+    const next = current.filter((message) => {
+      if (message.fileChangeSource === 'turnDiff') {
+        const persisted = persistedById.get(message.id)
+        return !persisted || !areMessageFieldsEqual(message, persisted)
+      }
+      return !persistedIds.has(message.id)
+        && !(message.turnId && persistedTurnIds.has(message.turnId))
+        && !(typeof message.turnIndex === 'number' && persistedTurnIndices.has(message.turnIndex))
+    })
     if (next.length === current.length) return
     if (next.length === 0) {
       liveFileChangeMessagesByThreadId.value = omitKey(liveFileChangeMessagesByThreadId.value, threadId)
@@ -3891,7 +3899,7 @@ export function useDesktopState() {
       }
       maybeUnblockInterruptForActiveTurn(startedTurn.threadId, startedTurn.turnId)
       clearLivePlansForThread(startedTurn.threadId)
-      clearLiveFileChangesForThread(startedTurn.threadId)
+      removeLiveFileChangesPersistedIn(startedTurn.threadId, persistedMessagesByThreadId.value[startedTurn.threadId] ?? [])
       setTurnSummaryForThread(startedTurn.threadId, null)
       setTurnErrorForThread(startedTurn.threadId, null)
       setThreadInProgress(startedTurn.threadId, true)
@@ -4103,6 +4111,16 @@ export function useDesktopState() {
         commandCompleted.commandExecution.aggregatedOutput ||= current.commandExecution.aggregatedOutput
       }
       upsertLiveActivity(notificationThreadId, commandCompleted)
+    }
+
+    if (notification.method === 'turn/diff/updated') {
+      const params = asRecord(notification.params)
+      const turnId = readString(params?.turnId)
+      if (turnId && typeof params?.diff === 'string') {
+        upsertLiveFileChangeMessage(notificationThreadId, turnDiffMessage(
+          turnId, params.diff, turnIndexByTurnIdByThreadId.value[notificationThreadId]?.[turnId],
+        ))
+      }
     }
 
     const completedFileChange = readCompletedFileChange(notification)

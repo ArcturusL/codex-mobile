@@ -1906,3 +1906,7 @@
 :root.dark .codex-update-heading { color: #e4e4e7; }
 :root.dark .codex-update-actions button { background: #27272a; border-color: #52525b; color: #e4e4e7; }
 :root.dark .codex-update-error { color: #fda4af; }
+
+:root.dark .file-change-review-button {
+  @apply border-zinc-700 text-zinc-200 hover:bg-zinc-800;
+}

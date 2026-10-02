@@ -341,10 +341,13 @@ function countContentLines(value: string): number {
 function countUnifiedDiffLines(value: string): { addedLineCount: number; removedLineCount: number } {
   let addedLineCount = 0
   let removedLineCount = 0
+  let inHunk = false
 
   for (const line of value.replace(/\r\n/g, '\n').split('\n')) {
     if (!line) continue
-    if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@')) continue
+    if (line.startsWith('diff --git ')) inHunk = false
+    if (line.startsWith('@@')) { inHunk = true; continue }
+    if (!inHunk && (line.startsWith('+++ ') || line.startsWith('--- '))) continue
     if (line.startsWith('+')) {
       addedLineCount += 1
       continue
@@ -381,7 +384,8 @@ export function toUiFileChanges(changes: unknown): UiFileChange[] {
         ? kind.move_path
         : null
 
-    const counts = operationType === 'update'
+    const diffFormat = change.diffFormat === 'unified' ? 'unified' as const : undefined
+    const counts = diffFormat === 'unified' || operationType === 'update'
       ? countUnifiedDiffLines(diff)
       : operationType === 'add'
         ? { addedLineCount: countContentLines(diff), removedLineCount: 0 }
@@ -392,6 +396,7 @@ export function toUiFileChanges(changes: unknown): UiFileChange[] {
       operation: operationType,
       movedToPath,
       diff,
+      ...(diffFormat ? { diffFormat } : {}),
       ...counts,
     })
   }
@@ -509,7 +514,8 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
   if (item.type === 'fileChange') {
     const fileChanges = toUiFileChanges(item.changes)
     const fileChangeStatus = normalizeFileChangeStatus(item.status)
-    if (fileChanges.length === 0 || fileChangeStatus !== 'completed') {
+    const isTurnDiff = (item as Record<string, unknown>).isTurnDiff === true
+    if ((!isTurnDiff && fileChanges.length === 0) || fileChangeStatus !== 'completed') {
       return []
     }
     return [
@@ -519,6 +525,7 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
         text: '',
         messageType: 'fileChange',
         fileChangeStatus,
+        ...(isTurnDiff ? { fileChangeSource: 'turnDiff' as const } : {}),
         fileChanges,
       },
     ]
