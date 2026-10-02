@@ -8,7 +8,7 @@ import {
   isThreadUnreadByLastRead,
   useDesktopState,
 } from './useDesktopState'
-import type { UiProjectGroup } from '../types/codex'
+import type { UiMessage, UiProjectGroup } from '../types/codex'
 import type { WorkspaceRootsState } from '../api/codexGateway'
 
 const gatewayMocks = vi.hoisted(() => ({
@@ -615,6 +615,146 @@ describe('startup request deduplication', () => {
     } finally {
       nowSpy.mockRestore()
     }
+  })
+})
+
+describe('conversation activity history', () => {
+  it('keeps completed activities until history takes over and refreshes a just-loaded turn once', async () => {
+    installTestWindow()
+    const threadId = 'activity-thread'
+    let notificationHandler: (notification: { method: string; params?: unknown }) => void = () => {}
+    gatewayMocks.subscribeCodexNotifications.mockImplementation((handler) => {
+      notificationHandler = handler
+      return vi.fn()
+    })
+    gatewayMocks.getPendingServerRequests.mockResolvedValue([])
+    gatewayMocks.getThreadGroupsPage.mockResolvedValue({
+      groups: [{ projectName: 'Project', threads: [thread(threadId, '/tmp/project')] }], nextCursor: null,
+    })
+    gatewayMocks.resumeThread.mockResolvedValue(null)
+    const earlierMessages: UiMessage[] = [
+      { id: 'old-reasoning', role: 'assistant', text: 'Earlier summary', messageType: 'agentReasoning', turnId: 'old-turn', turnIndex: 0 },
+      { id: 'turn-summary:old-turn', role: 'system', text: 'Worked', messageType: 'worked', turnId: 'old-turn', turnIndex: 0 },
+      { id: 'user', role: 'user', text: 'Check this', messageType: 'userMessage', turnId: 'turn-1', turnIndex: 1 },
+    ]
+    gatewayMocks.getThreadDetail.mockResolvedValue({
+      messages: earlierMessages, inProgress: true, activeTurnId: 'turn-1',
+      turnIndexByTurnId: { 'old-turn': 0, 'turn-1': 1 }, hasMoreOlder: false,
+    })
+    const state = useDesktopState()
+    state.primeSelectedThread(threadId)
+    await state.loadMessages(threadId)
+    state.startPolling()
+    const emit = (method: string, params: Record<string, unknown>) => notificationHandler({
+      method, params: { threadId, turnId: 'turn-1', ...params },
+    })
+
+    emit('item/started', { item: { id: 'reasoning-1', type: 'reasoning' } })
+    emit('item/reasoning/summaryTextDelta', { itemId: 'reasoning-1', delta: 'Inspect ' })
+    emit('item/reasoning/summaryTextDelta', { itemId: 'reasoning-1', delta: 'files' })
+    emit('item/completed', { item: { id: 'reasoning-1', type: 'reasoning', summary: ['Inspect files'], content: ['Unused content'] } })
+    emit('item/started', { item: { id: 'command-1', type: 'commandExecution', command: 'pwd', cwd: '/tmp/project' } })
+    emit('item/commandExecution/outputDelta', { itemId: 'command-1', delta: '/tmp/project\n' })
+    emit('item/completed', { item: { id: 'command-1', type: 'commandExecution', command: 'pwd', cwd: '/tmp/project', status: 'completed', aggregatedOutput: null, exitCode: 0 } })
+    emit('item/reasoning/textDelta', { itemId: 'reasoning-2', delta: 'Check ' })
+    emit('item/reasoning/textDelta', { itemId: 'reasoning-2', delta: 'output' })
+    emit('item/completed', { item: { id: 'reasoning-2', type: 'reasoning', summary: [], content: [] } })
+    emit('item/completed', { item: { id: 'answer', type: 'agentMessage', text: 'Done' } })
+    emit('turn/completed', { turn: { id: 'turn-1', status: 'completed' }, durationMs: 1234 })
+    notificationHandler({
+      method: 'item/completed',
+      params: { threadId, item: { id: 'command-1', type: 'commandExecution', command: 'pwd', cwd: '/tmp/project', status: 'completed', aggregatedOutput: null, exitCode: 0 } },
+    })
+
+    const activityIds = ['reasoning-1', 'command-1', 'reasoning-2']
+    expect(state.messages.value.filter((message) => activityIds.includes(message.id)).map((message) => message.id))
+      .toEqual(activityIds)
+    expect(state.messages.value.find((message) => message.id === 'reasoning-2')).toMatchObject({
+      text: 'Check output', messageType: 'agentReasoning', turnId: 'turn-1', turnIndex: 1,
+    })
+    expect(state.messages.value.find((message) => message.id === 'command-1')?.commandExecution).toMatchObject({
+      status: 'completed', aggregatedOutput: '/tmp/project\n', exitCode: 0,
+    })
+    expect(state.messages.value.find((message) => message.id === 'command-1')).toMatchObject({ turnId: 'turn-1', turnIndex: 1 })
+    expect(state.messages.value.filter((message) => message.messageType === 'worked').map((message) => message.turnId))
+      .toEqual(['old-turn', 'turn-1'])
+    expect(state.selectedLiveOverlay.value).toBeNull()
+
+    // A completed read can lag behind item notifications. Keep the observed activities.
+    const answer: UiMessage = { id: 'answer', role: 'assistant', text: 'Done', messageType: 'agentMessage', turnId: 'turn-1', turnIndex: 1 }
+    gatewayMocks.getThreadDetail.mockResolvedValue({
+      messages: [
+        ...earlierMessages,
+        { id: 'reasoning-1', role: 'assistant', text: 'Inspect', messageType: 'agentReasoning', turnId: 'turn-1', turnIndex: 1 },
+        {
+          id: 'command-1', role: 'system', text: 'pwd', messageType: 'commandExecution', turnId: 'turn-1', turnIndex: 1,
+          commandExecution: { command: 'pwd', cwd: '/tmp/project', status: 'inProgress', aggregatedOutput: '', exitCode: null },
+        },
+        answer,
+      ], inProgress: false, activeTurnId: '',
+      turnIndexByTurnId: { 'old-turn': 0, 'turn-1': 1 }, hasMoreOlder: false,
+    })
+    const eventSync = vi.mocked(window.setTimeout).mock.calls.find((call) => call[1] === 220)?.[0]
+    expect(typeof eventSync).toBe('function')
+    if (typeof eventSync === 'function') eventSync()
+    await vi.waitFor(() => expect(gatewayMocks.getThreadDetail).toHaveBeenCalledTimes(2))
+    expect(state.messages.value.filter((message) => activityIds.includes(message.id))).toHaveLength(3)
+    expect(state.messages.value.find((message) => message.id === 'reasoning-1')?.text).toBe('Inspect files')
+    expect(state.messages.value.find((message) => message.id === 'command-1')?.commandExecution).toMatchObject({
+      status: 'completed', aggregatedOutput: '/tmp/project\n', exitCode: 0,
+    })
+
+    const persistedMessages = [
+      ...earlierMessages,
+      ...state.messages.value.filter((message) => activityIds.includes(message.id)),
+      { id: 'turn-summary:turn-1', role: 'system', text: 'Worked', messageType: 'worked', turnId: 'turn-1', turnIndex: 1 },
+      answer,
+    ]
+    gatewayMocks.getThreadDetail.mockResolvedValue({
+      messages: persistedMessages, inProgress: false, activeTurnId: '',
+      turnIndexByTurnId: { 'old-turn': 0, 'turn-1': 1 }, hasMoreOlder: false,
+    })
+    await state.loadMessages(threadId, { force: true, silent: true })
+    expect(state.messages.value.filter((message) => activityIds.includes(message.id))).toHaveLength(3)
+    expect(state.messages.value.filter((message) => message.messageType === 'worked')).toHaveLength(2)
+    expect(state.messages.value.findIndex((message) => message.id === 'turn-summary:turn-1'))
+      .toBeLessThan(state.messages.value.findIndex((message) => message.id === 'answer'))
+    emit('turn/started', { turnId: 'turn-2', turn: { id: 'turn-2', status: 'inProgress' } })
+    expect(state.messages.value.findIndex((message) => message.id === 'turn-summary:turn-1'))
+      .toBeLessThan(state.messages.value.findIndex((message) => message.id === 'answer'))
+
+    const reloaded = useDesktopState()
+    reloaded.primeSelectedThread(threadId)
+    await reloaded.loadMessages(threadId)
+    expect(reloaded.messages.value.filter((message) => activityIds.includes(message.id))).toHaveLength(3)
+    expect(reloaded.messages.value.filter((message) => message.messageType === 'worked')).toHaveLength(2)
+  })
+
+  it('refreshes after an in-flight read when a turn event requires fresh history', async () => {
+    installTestWindow()
+    gatewayMocks.resumeThread.mockResolvedValue(null)
+    let resolveRead: (value: unknown) => void = () => {}
+    const detail = {
+      messages: [], inProgress: true, activeTurnId: 'turn-1',
+      turnIndexByTurnId: { 'turn-1': 0 }, hasMoreOlder: false,
+    }
+    gatewayMocks.getThreadDetail
+      .mockReturnValueOnce(new Promise((resolve) => { resolveRead = resolve }))
+      .mockResolvedValueOnce({
+        ...detail, inProgress: false, activeTurnId: '',
+        messages: [{ id: 'reasoning', role: 'assistant', text: 'Saved summary', messageType: 'agentReasoning', turnId: 'turn-1' }],
+      })
+    const state = useDesktopState()
+    state.primeSelectedThread('pending-history-thread')
+    const firstRead = state.loadMessages('pending-history-thread')
+    await Promise.resolve()
+    const eventRead = state.loadMessages('pending-history-thread', { force: true, silent: true })
+    resolveRead(detail)
+    await Promise.all([firstRead, eventRead])
+
+    expect(gatewayMocks.getThreadDetail).toHaveBeenCalledTimes(2)
+    expect(state.messages.value).toEqual([expect.objectContaining({ id: 'reasoning', text: 'Saved summary' })])
+    expect(state.selectedLiveOverlay.value).toBeNull()
   })
 })
 
