@@ -8,6 +8,7 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
+| [Codex TUI version and updates](codex-tui-updates.md) |
 | [Desktop runtime without mobile bootstrap](desktop-runtime-without-mobile-bootstrap.md) |
 | [Missing Codex CLI chat error](missing-codex-cli-chat-error.md) |
 | [Startup avoids duplicate setup probes](startup-avoids-duplicate-setup-probes.md) |

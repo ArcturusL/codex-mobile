@@ -1897,3 +1897,8 @@
 .conversation-root .message-math .katex-display > .katex {
   white-space: nowrap;
 }
+
+:root.dark .codex-update-settings { border-color: #3f3f46; color: #a1a1aa; }
+:root.dark .codex-update-heading { color: #e4e4e7; }
+:root.dark .codex-update-actions button { background: #27272a; border-color: #52525b; color: #e4e4e7; }
+:root.dark .codex-update-error { color: #fda4af; }

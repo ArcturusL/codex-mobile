@@ -30,6 +30,9 @@ function needsCmdExeWrapper(command: string): boolean {
 }
 
 export function getSpawnInvocation(command: string, args: string[] = []): { command: string; args: string[] } {
+  if (/\.(?:c?js|mjs)$/i.test(command)) {
+    return { command: process.execPath, args: [command, ...args] }
+  }
   if (needsCmdExeWrapper(command)) {
     return {
       command: 'cmd.exe',

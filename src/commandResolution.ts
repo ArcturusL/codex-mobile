@@ -1,7 +1,23 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
+import { getSpawnInvocation } from './utils/commandInvocation'
+
+export function getManagedCodexRoot(): string {
+  return join(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex'), 'codexui-runtime')
+}
+
+export function getManagedCodexCommand(): string | null {
+  try {
+    const { directory } = JSON.parse(readFileSync(join(getManagedCodexRoot(), 'current.json'), 'utf8'))
+    if (typeof directory !== 'string' || !/^install-[a-zA-Z0-9]+$/.test(directory)) return null
+    const command = join(getManagedCodexRoot(), directory, 'node_modules', '@openai', 'codex', 'bin', 'codex.js')
+    return existsSync(command) ? command : null
+  } catch {
+    return null
+  }
+}
 
 export type CommandInvocation = {
   command: string
@@ -86,9 +102,11 @@ function getPotentialRipgrepExecutables(prefix: string): string[] {
 }
 
 export function canRunCommand(command: string, args: string[] = []): boolean {
-  const result = spawnSync(command, args, {
+  const invocation = getSpawnInvocation(command, args)
+  const result = spawnSync(invocation.command, invocation.args, {
     stdio: 'ignore',
     windowsHide: true,
+    timeout: 10_000,
   })
   return !result.error && result.status === 0
 }
@@ -124,7 +142,7 @@ export function resolveCodexCommand(): string | null {
     ? [...packageCandidates, 'codex']
     : ['codex', ...packageCandidates]
 
-  for (const candidate of uniqueStrings([explicit, ...fallbackCandidates])) {
+  for (const candidate of uniqueStrings([getManagedCodexCommand(), explicit, ...fallbackCandidates])) {
     if (isRunnableCommand(candidate, ['--version'])) {
       return candidate
     }
