@@ -1,5 +1,5 @@
 <template>
-  <DesktopLayout :is-sidebar-collapsed="isSidebarCollapsed" @close-sidebar="setSidebarCollapsed(true)">
+  <DesktopLayout :is-sidebar-collapsed="isSidebarCollapsed">
     <template #sidebar>
       <section class="sidebar-root">
         <div
@@ -53,7 +53,7 @@
             class="sidebar-skills-link"
             :class="{ 'is-active': isSkillsRoute }"
             type="button"
-            @click="router.push({ name: 'skills' }); isMobile && setSidebarCollapsed(true)"
+            @click="router.push({ name: 'skills' })"
           >
             <span class="sidebar-skills-link-icon" aria-hidden="true">
               <IconTablerBolt />
@@ -69,7 +69,7 @@
             class="sidebar-skills-link"
             :class="{ 'is-active': isAutomationsRoute }"
             type="button"
-            @click="router.push({ name: 'automations' }); isMobile && setSidebarCollapsed(true)"
+            @click="router.push({ name: 'automations' })"
           >
             <span class="sidebar-skills-link-icon sidebar-automations-link-icon" aria-hidden="true">
               <IconTablerBolt />
@@ -439,50 +439,6 @@
                   @update:model-value="onDictationLanguageChange"
                 />
               </div>
-              <button class="sidebar-settings-row" type="button" aria-live="polite" @click="isTelegramConfigOpen = !isTelegramConfigOpen">
-                <span class="sidebar-settings-label">{{ t('Telegram') }}</span>
-                <span class="sidebar-settings-value">{{ telegramStatusText }}</span>
-              </button>
-              <div v-if="isTelegramConfigOpen" class="sidebar-settings-telegram-panel">
-                <label class="sidebar-settings-field">
-                  <span class="sidebar-settings-field-label">{{ t('Bot token') }}</span>
-                  <input
-                    v-model="telegramBotTokenDraft"
-                    class="sidebar-settings-input"
-                    type="password"
-                    placeholder="123456:ABCDEF"
-                    autocomplete="off"
-                    spellcheck="false"
-                  >
-                </label>
-                <label class="sidebar-settings-field">
-                  <span class="sidebar-settings-field-label">{{ t('Allowed Telegram user IDs') }}</span>
-                  <textarea
-                    v-model="telegramAllowedUserIdsDraft"
-                    class="sidebar-settings-textarea"
-                    rows="3"
-                    placeholder="123456789&#10;987654321"
-                    spellcheck="false"
-                  />
-                </label>
-                <div class="sidebar-settings-field-help">
-                  {{ t('Put one Telegram user ID per line or separate them with commas. Use `*` to allow all Telegram users. Unauthorized users will see their own ID in the rejection message so they can copy it here.') }}
-                </div>
-                <div v-if="telegramConfigError" class="sidebar-settings-telegram-error">
-                  <span>{{ telegramConfigError }}</span>
-                  <a class="visible-error-feedback" :href="feedbackMailto" @click="prepareFeedbackLink($event, telegramConfigError)">{{ t('Send feedback') }}</a>
-                </div>
-                <div class="sidebar-settings-telegram-actions">
-                  <button
-                    class="sidebar-settings-telegram-save"
-                    type="button"
-                    :disabled="isTelegramSaving"
-                    @click="saveTelegramConfig"
-                  >
-                    {{ isTelegramSaving ? t('Saving…') : t('Save Telegram config') }}
-                  </button>
-                </div>
-              </div>
               <div
                 v-if="showThreadContextBadge"
                 class="sidebar-settings-row sidebar-settings-context-row"
@@ -522,17 +478,12 @@
     <template #content>
       <section
         class="content-root"
-        :class="{
-          'is-virtual-keyboard-open': isTerminalKeyboardLayoutActive,
-          'is-terminal-open': isComposerTerminalOpen,
-        }"
         :style="contentStyle"
       >
-        <span v-if="isVirtualKeyboardOpen" class="content-keyboard-spacer" aria-hidden="true" />
         <ContentHeader :title="contentTitle" :accent="isSkillsRoute || isAutomationsRoute">
           <template #leading>
             <SidebarThreadControls
-              v-if="isSidebarCollapsed || isMobile"
+              v-if="isSidebarCollapsed"
               class="sidebar-thread-controls-header-host"
               :is-sidebar-collapsed="isSidebarCollapsed"
               :show-new-thread-button="true"
@@ -946,7 +897,6 @@
                   :thread-id="composerThreadContextId"
                   :cwd="composerCwd"
                   @hide="onHideHomeTerminal"
-                  @terminal-focus-change="onTerminalFocusChange"
                 />
                 <ThreadComposer ref="homeThreadComposerRef" :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
@@ -988,7 +938,7 @@
 
               <template v-else>
                 <div class="content-thread">
-                  <ThreadConversation ref="threadConversationRef" :messages="filteredMessages" :is-loading="isLoadingMessages"
+                  <ThreadConversation :messages="filteredMessages" :is-loading="isLoadingMessages"
                     :active-thread-id="composerThreadContextId" :cwd="composerCwd"
                     :live-overlay="liveOverlay"
                     :pending-requests="selectedThreadServerRequests"
@@ -1020,7 +970,6 @@
                     :thread-id="selectedThreadId"
                     :cwd="composerCwd"
                     @hide="onHideSelectedThreadTerminal"
-                    @terminal-focus-change="onTerminalFocusChange"
                   />
                   <ThreadPendingRequestPanel
                     v-if="selectedThreadPendingRequest"
@@ -1198,13 +1147,11 @@ import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerTerminal from './components/icons/IconTablerTerminal.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
 import { useDesktopState } from './composables/useDesktopState'
-import { useMobile } from './composables/useMobile'
 import { useUiLanguage } from './composables/useUiLanguage'
 import { useFeedbackDiagnostics } from './composables/useFeedbackDiagnostics'
 import {
   checkoutGitBranch,
   cloneGithubRepository,
-  configureTelegramBot,
   createPermanentWorktree,
   createWorktree,
   createProjectlessThreadDirectory,
@@ -1220,9 +1167,7 @@ import {
   createLocalDirectory,
   getFirstLaunchPluginsCardPreference,
   getHomeDirectory,
-  getTelegramConfig,
   getProjectRootSuggestion,
-  getTelegramStatus,
   getThreadTerminalQuickCommands,
   getThreadTerminalStatus,
   getWorkspaceRootsState,
@@ -1239,7 +1184,7 @@ import {
 } from './api/codexGateway'
 import type { ReasoningEffort, SpeedMode, UiAccountEntry, UiRateLimitWindow, UiServerRequest, UiServerRequestReply, UiThreadAutomation, UiThreadTokenUsage } from './types/codex'
 import type { ComposerDraftPayload, ThreadComposerExposed } from './components/content/ThreadComposer.vue'
-import type { GitCommitFileChange, GitCommitOption, LocalDirectoryEntry, TelegramStatus, ThreadTerminalQuickCommand, WorktreeBranchOption } from './api/codexGateway'
+import type { GitCommitFileChange, GitCommitOption, LocalDirectoryEntry, ThreadTerminalQuickCommand, WorktreeBranchOption } from './api/codexGateway'
 import { getFreeModeStatus, setFreeMode, setFreeModeCustomKey, setCustomProvider } from './api/codexGateway'
 import { getPathLeafName, getPathParent, isProjectlessChatPath, normalizePathForUi } from './pathUtils.js'
 import { copyTextToClipboard } from './utils/clipboard'
@@ -1487,7 +1432,6 @@ const {
 
 const route = useRoute()
 const router = useRouter()
-const { isMobile } = useMobile()
 type SidebarThreadTreeExposed = {
   openAutomationEditorFromPanel: (payload: AutomationEditRequest) => void
   openAutomationCreatorFromPanel: () => void
@@ -1520,12 +1464,9 @@ function prepareFeedbackLink(event: MouseEvent, message?: string): void {
 }
 const homeThreadComposerRef = ref<ThreadComposerExposed | null>(null)
 const threadComposerRef = ref<ThreadComposerExposed | null>(null)
-const threadConversationRef = ref<{ jumpToLatest: () => void } | null>(null)
 const homeTerminalPanelRef = ref<ThreadTerminalPanelExposed | null>(null)
 const threadTerminalPanelRef = ref<ThreadTerminalPanelExposed | null>(null)
 const homeTerminalOpen = ref(false)
-const isTerminalInputFocused = ref(false)
-const isTerminalKeyboardFocusFallbackActive = ref(false)
 const isThreadTerminalAvailable = ref(true)
 const terminalProjectQuickCommands = ref<ThreadTerminalQuickCommand[]>([])
 const terminalStoredQuickCommands = ref<TerminalHeaderQuickCommand[]>(loadTerminalStoredQuickCommands())
@@ -1570,7 +1511,6 @@ const settingsPanelRef = ref<HTMLElement | null>(null)
 const settingsButtonRef = ref<HTMLElement | null>(null)
 const serverMatchedThreadIds = ref<string[] | null>(null)
 let threadSearchTimer: ReturnType<typeof setTimeout> | null = null
-let terminalKeyboardFocusFallbackTimer: ReturnType<typeof setTimeout> | null = null
 let sidebarScrollTop = 0
 let sidebarScrollRestoreRequestId = 0
 let isRestoringSidebarScroll = false
@@ -1629,7 +1569,6 @@ const DICTATION_AUTO_SEND_KEY = 'codex-web-local.dictation-auto-send.v1'
 const DICTATION_LANGUAGE_KEY = 'codex-web-local.dictation-language.v1'
 
 const CHAT_WIDTH_KEY = 'codex-web-local.chat-width.v1'
-const MOBILE_RESUME_RELOAD_MIN_HIDDEN_MS = 400
 const SHOW_SKILLS_TAB_KEY = 'codex-web-local.show-skills-tab.v1'
 const SHOW_AUTOMATIONS_TAB_KEY = 'codex-web-local.show-automations-tab.v1'
 const showSkillsTab = ref(loadBoolPref(SHOW_SKILLS_TAB_KEY, true))
@@ -1678,11 +1617,6 @@ const customEndpointKey = ref('')
 const customEndpointWireApi = ref<'responses' | 'chat'>('responses')
 const openRouterWireApi = ref<'responses' | 'chat'>('responses')
 const opencodeZenKey = ref('')
-const isTelegramConfigOpen = ref(false)
-const telegramBotTokenDraft = ref('')
-const telegramAllowedUserIdsDraft = ref('')
-const telegramConfigError = ref('')
-const isTelegramSaving = ref(false)
 const isCreateFolderOpen = ref(false)
 const createFolderDraft = ref('')
 const createFolderError = ref('')
@@ -1716,27 +1650,11 @@ const visibleFeedbackErrors = [
   threadBranchCommitsError,
   accountActionError,
   providerError,
-  telegramConfigError,
   createFolderError,
   projectSetupError,
   existingFolderError,
 ]
 const hasVisibleFeedbackError = computed(() => visibleFeedbackErrors.some((entry) => entry.value.trim().length > 0))
-const telegramStatus = ref<TelegramStatus>({
-  configured: false,
-  active: false,
-  mappedChats: 0,
-  mappedThreads: 0,
-  allowedUsers: 0,
-  allowAllUsers: false,
-  lastError: '',
-})
-const mobileHiddenAtMs = ref<number | null>(null)
-const mobileResumeReloadTriggered = ref(false)
-const mobileResumeSyncInProgress = ref(false)
-const visualViewportHeight = ref(typeof window !== 'undefined' ? window.visualViewport?.height ?? window.innerHeight : 0)
-const visualViewportOffsetTop = ref(typeof window !== 'undefined' ? window.visualViewport?.offsetTop ?? 0 : 0)
-const layoutViewportHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 0)
 let accountStatePollTimer: number | null = null
 let isAccountStatePollInFlight = false
 let externalCodexAuthAvailable = false
@@ -1809,15 +1727,6 @@ const canShowContentHeaderBranchDropdown = computed(() => (
 ))
 const isComposerTerminalOpen = computed(() => (
   isHomeRoute.value ? homeTerminalOpen.value : selectedThreadTerminalOpen.value
-))
-const isVirtualKeyboardOpen = computed(() => {
-  if (!isMobile.value) return false
-  if (visualViewportHeight.value <= 0 || layoutViewportHeight.value <= 0) return false
-  return layoutViewportHeight.value - visualViewportHeight.value > 120
-})
-const isTerminalKeyboardLayoutActive = computed(() => (
-  isVirtualKeyboardOpen.value ||
-  (isComposerTerminalOpen.value && isTerminalKeyboardFocusFallbackActive.value)
 ))
 const directoryCwd = computed(() => selectedThread.value?.cwd?.trim() ?? newThreadCwd.value.trim())
 const isSelectedThreadInProgress = computed(() => !isHomeRoute.value && selectedThread.value?.inProgress === true)
@@ -2089,7 +1998,7 @@ const existingFolderFilteredEntries = computed(() => {
 const darkModeMediaQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
 const chatWidthLabel = computed(() => t(CHAT_WIDTH_PRESETS[chatWidth.value].label))
 const terminalShortcutLabel = computed(() => {
-  if (typeof navigator !== 'undefined' && /mac|iphone|ipad|ipod/i.test(navigator.platform)) {
+  if (typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)) {
     return '⌘J'
   }
   return 'Ctrl+J'
@@ -2119,39 +2028,16 @@ const terminalHeaderDropdownOptions = computed(() => [
 ])
 const contentStyle = computed(() => {
   const preset = CHAT_WIDTH_PRESETS[chatWidth.value]
-  const keyboardInset = Math.max(
-    0,
-    layoutViewportHeight.value - visualViewportHeight.value - visualViewportOffsetTop.value,
-  )
   return {
     '--chat-column-max': preset.columnMax,
     '--chat-card-max': preset.cardMax,
-    '--visual-viewport-height': visualViewportHeight.value > 0 ? `${visualViewportHeight.value}px` : '100dvh',
-    '--visual-viewport-offset-top': `${Math.max(0, visualViewportOffsetTop.value)}px`,
-    '--virtual-keyboard-inset': `${keyboardInset}px`,
   }
-})
-const telegramStatusText = computed(() => {
-  if (!telegramStatus.value.configured) return t('Not configured')
-  const base = telegramStatus.value.active ? t('Online') : t('Configured (offline)')
-  const allowlist = telegramStatus.value.allowAllUsers
-    ? t('allow all users')
-    : `${telegramStatus.value.allowedUsers} ${t('allowed user(s)')}`
-  const mapped = `${telegramStatus.value.mappedChats} ${t('chat(s)')}, ${telegramStatus.value.mappedThreads} ${t('thread(s)')}, ${allowlist}`
-  const error = telegramStatus.value.lastError ? `, ${t('error')}: ${telegramStatus.value.lastError}` : ''
-  return `${base}, ${mapped}${error}`
 })
 
 onMounted(() => {
   document.addEventListener('pointerdown', onDocumentPointerDown)
   window.addEventListener('keydown', onWindowKeyDown)
-  document.addEventListener('visibilitychange', onDocumentVisibilityChange)
-  window.addEventListener('pageshow', onWindowPageShow)
   window.addEventListener('focus', onWindowFocus)
-  window.addEventListener('resize', updateVisualViewportState)
-  window.visualViewport?.addEventListener('resize', updateVisualViewportState)
-  window.visualViewport?.addEventListener('scroll', updateVisualViewportState)
-  updateVisualViewportState()
   applyDarkMode()
   darkModeMediaQuery?.addEventListener('change', applyDarkMode)
   void initialize()
@@ -2159,8 +2045,6 @@ onMounted(() => {
   void loadFirstLaunchPluginsCardPreference()
   void loadWorkspaceRootOptionsState()
   void refreshDefaultProjectName()
-  void refreshTelegramConfig()
-  void refreshTelegramStatus()
   void loadFreeModeStatus()
   void refreshThreadTerminalStatus()
   void refreshTerminalQuickCommands()
@@ -2179,12 +2063,7 @@ watch(visibleFeedbackErrors, (values, oldValues) => {
 onUnmounted(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown)
   window.removeEventListener('keydown', onWindowKeyDown)
-  document.removeEventListener('visibilitychange', onDocumentVisibilityChange)
-  window.removeEventListener('pageshow', onWindowPageShow)
   window.removeEventListener('focus', onWindowFocus)
-  window.removeEventListener('resize', updateVisualViewportState)
-  window.visualViewport?.removeEventListener('resize', updateVisualViewportState)
-  window.visualViewport?.removeEventListener('scroll', updateVisualViewportState)
   darkModeMediaQuery?.removeEventListener('change', applyDarkMode)
   if (accountStatePollTimer !== null) {
     window.clearInterval(accountStatePollTimer)
@@ -2194,16 +2073,8 @@ onUnmounted(() => {
     clearTimeout(threadSearchTimer)
     threadSearchTimer = null
   }
-  clearTerminalKeyboardFocusFallbackTimer()
   stopPolling()
 })
-
-function updateVisualViewportState(): void {
-  if (typeof window === 'undefined') return
-  layoutViewportHeight.value = Math.max(layoutViewportHeight.value, window.innerHeight)
-  visualViewportHeight.value = window.visualViewport?.height ?? window.innerHeight
-  visualViewportOffsetTop.value = window.visualViewport?.offsetTop ?? 0
-}
 
 watch(sidebarSearchQuery, (value) => {
   const query = value.trim()
@@ -2227,11 +2098,6 @@ watch(sidebarSearchQuery, (value) => {
         serverMatchedThreadIds.value = null
       })
   }, 220)
-})
-
-watch(isVirtualKeyboardOpen, (open) => {
-  if (open) return
-  isTerminalKeyboardFocusFallbackActive.value = false
 })
 
 watch(accounts, () => {
@@ -2287,79 +2153,9 @@ function onSkillsChanged(): void {
   void refreshSkills({ force: true })
 }
 
-async function refreshTelegramStatus(): Promise<void> {
-  try {
-    telegramStatus.value = await getTelegramStatus()
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to load Telegram status'
-    telegramStatus.value = {
-      configured: false,
-      active: false,
-      mappedChats: 0,
-      mappedThreads: 0,
-      allowedUsers: 0,
-      allowAllUsers: false,
-      lastError: message,
-    }
-  }
-}
-
-async function refreshTelegramConfig(): Promise<void> {
-  try {
-    const config = await getTelegramConfig()
-    telegramBotTokenDraft.value = config.botToken
-    telegramAllowedUserIdsDraft.value = config.allowedUserIds.map((value) => String(value)).join('\n')
-    telegramConfigError.value = ''
-  } catch (error) {
-    telegramConfigError.value = error instanceof Error ? error.message : 'Failed to load Telegram configuration'
-  }
-}
-
 async function loadFirstLaunchPluginsCardPreference(): Promise<void> {
   const preference = await getFirstLaunchPluginsCardPreference()
   showFirstLaunchPluginsCard.value = preference.dismissed !== true
-}
-
-function parseTelegramAllowedUserIdsInput(value: string): Array<number | '*'> {
-  const rawEntries = value
-    .split(/[\n,]/)
-    .map((entry) => entry.trim().replace(/^(telegram|tg):/i, '').trim())
-    .filter(Boolean)
-  const allowAllUsers = rawEntries.includes('*')
-  const normalizedUserIds = Array.from(new Set(rawEntries
-    .filter((entry) => /^-?\d+$/.test(entry))
-    .map((entry) => Number.parseInt(entry, 10))))
-  return allowAllUsers ? ['*', ...normalizedUserIds] : normalizedUserIds
-}
-
-async function saveTelegramConfig(): Promise<void> {
-  const botToken = telegramBotTokenDraft.value.trim()
-  const allowedUserIds = parseTelegramAllowedUserIdsInput(telegramAllowedUserIdsDraft.value)
-  if (!botToken) {
-    telegramConfigError.value = t('Telegram bot token is required.')
-    return
-  }
-  if (allowedUserIds.length === 0) {
-    telegramConfigError.value = t('At least one allowed Telegram user ID or * is required.')
-    return
-  }
-
-  isTelegramSaving.value = true
-  telegramConfigError.value = ''
-  try {
-    await configureTelegramBot(botToken, allowedUserIds)
-    telegramAllowedUserIdsDraft.value = allowedUserIds.map((value) => String(value)).join('\n')
-    await Promise.all([
-      refreshTelegramConfig(),
-      refreshTelegramStatus(),
-    ])
-    window.alert(t('Telegram bot configured. Only allowlisted Telegram users can use the bridge.'))
-  } catch (error) {
-    telegramConfigError.value = error instanceof Error ? error.message : t('Failed to connect Telegram bot')
-    void refreshTelegramStatus()
-  } finally {
-    isTelegramSaving.value = false
-  }
 }
 
 function toggleSidebarSearch(): void {
@@ -2379,7 +2175,7 @@ function clearSidebarSearch(): void {
 function getSidebarScrollableElement(): HTMLElement | null {
   if (sidebarScrollableRef.value) return sidebarScrollableRef.value
   if (typeof document === 'undefined') return null
-  return document.querySelector<HTMLElement>('.mobile-drawer .sidebar-scrollable, .sidebar-scrollable')
+  return document.querySelector<HTMLElement>('.sidebar-scrollable')
 }
 
 function onSidebarScroll(event?: Event): void {
@@ -2438,7 +2234,6 @@ function onSelectThread(threadId: string): void {
   if (!threadId) return
   if (route.name === 'thread' && routeThreadId.value === threadId) return
   void router.push({ name: 'thread', params: { threadId } })
-  if (isMobile.value) setSidebarCollapsed(true)
 }
 
 function onSelectAutomationInPanel(automationId: string): void {
@@ -2769,7 +2564,6 @@ async function onForkThread(threadId: string): Promise<void> {
   } else {
     await router.replace({ name: 'thread', params: { threadId: nextThreadId } })
   }
-  if (isMobile.value) setSidebarCollapsed(true)
 }
 
 function isWorktreePath(cwdRaw: string): boolean {
@@ -2792,7 +2586,7 @@ function onStartNewThread(projectName: string): void {
   if (projectCwd) {
     newThreadCwd.value = projectCwd
   }
-  if (isMobile.value) setSidebarCollapsed(true)
+
   if (isHomeRoute.value) return
   void router.push({ name: 'home' })
 }
@@ -2976,7 +2770,7 @@ async function onCreateProjectWorktree(projectName: string): Promise<void> {
     pinProjectToTop(getProjectOrderNameForPath(normalizedPath))
     await loadWorkspaceRootOptionsState()
     await refreshDefaultProjectName()
-    if (isMobile.value) setSidebarCollapsed(true)
+
     if (!isHomeRoute.value) {
       await router.push({ name: 'home' })
     }
@@ -3000,7 +2794,7 @@ function onStartNewThreadFromToolbar(): void {
     newThreadCwd.value = resolvedCwd
   }
   newThreadRuntime.value = 'local'
-  if (isMobile.value) setSidebarCollapsed(true)
+
   if (isHomeRoute.value) return
   void router.push({ name: 'home' })
 }
@@ -3008,7 +2802,7 @@ function onStartNewThreadFromToolbar(): void {
 function onStartProjectlessNewChat(): void {
   newThreadCwd.value = ''
   newThreadRuntime.value = 'local'
-  if (isMobile.value) setSidebarCollapsed(true)
+
   if (isHomeRoute.value) return
   void router.push({ name: 'home' })
 }
@@ -3092,7 +2886,6 @@ async function onForkThreadFromMessage(payload: { threadId: string; turnIndex: n
   if (selectedThreadId.value !== forkedThreadId) {
     await selectThread(forkedThreadId)
   }
-  if (isMobile.value) setSidebarCollapsed(true)
 }
 
 function setSidebarCollapsed(nextValue: boolean): void {
@@ -3140,15 +2933,9 @@ function toggleComposerTerminal(): void {
   if (isHomeRoute.value) {
     if (!composerCwd.value) return
     homeTerminalOpen.value = !homeTerminalOpen.value
-    if (!homeTerminalOpen.value) {
-      resetTerminalKeyboardFocusState()
-    }
     return
   }
   toggleSelectedThreadTerminal()
-  if (!selectedThreadTerminalOpen.value) {
-    resetTerminalKeyboardFocusState()
-  }
 }
 
 function onSelectHeaderTerminalCommand(command: string): void {
@@ -3295,45 +3082,14 @@ function readTerminalPositiveInteger(value: unknown): number {
   return 0
 }
 
-function onTerminalFocusChange(focused: boolean): void {
-  isTerminalInputFocused.value = focused
-  if (!focused) {
-    isTerminalKeyboardFocusFallbackActive.value = false
-    clearTerminalKeyboardFocusFallbackTimer()
-    return
-  }
-  isTerminalKeyboardFocusFallbackActive.value = true
-  clearTerminalKeyboardFocusFallbackTimer()
-  terminalKeyboardFocusFallbackTimer = setTimeout(() => {
-    terminalKeyboardFocusFallbackTimer = null
-    if (!isVirtualKeyboardOpen.value) {
-      isTerminalKeyboardFocusFallbackActive.value = false
-    }
-  }, 1500)
-}
-
 function onHideHomeTerminal(): void {
   homeTerminalOpen.value = false
-  resetTerminalKeyboardFocusState()
 }
 
 function onHideSelectedThreadTerminal(): void {
   if (selectedThreadId.value) {
     setThreadTerminalOpen(selectedThreadId.value, false)
   }
-  resetTerminalKeyboardFocusState()
-}
-
-function resetTerminalKeyboardFocusState(): void {
-  isTerminalInputFocused.value = false
-  isTerminalKeyboardFocusFallbackActive.value = false
-  clearTerminalKeyboardFocusFallbackTimer()
-}
-
-function clearTerminalKeyboardFocusFallbackTimer(): void {
-  if (!terminalKeyboardFocusFallbackTimer) return
-  clearTimeout(terminalKeyboardFocusFallbackTimer)
-  terminalKeyboardFocusFallbackTimer = null
 }
 
 async function refreshThreadTerminalStatus(): Promise<void> {
@@ -3355,12 +3111,6 @@ async function refreshThreadTerminalStatus(): Promise<void> {
 function onDocumentPointerDown(event: PointerEvent): void {
   const target = event.target
   if (!(target instanceof Node)) return
-  if (isTerminalInputFocused.value) {
-    const targetElement = target instanceof Element ? target : target.parentElement
-    if (!targetElement?.closest('.thread-terminal-panel')) {
-      resetTerminalKeyboardFocusState()
-    }
-  }
   if (!isSettingsOpen.value) return
   if (settingsPanelRef.value?.contains(target)) return
   if (settingsButtonRef.value?.contains(target)) return
@@ -3376,65 +3126,15 @@ function onSettingsAreaClick(event: MouseEvent): void {
   isSettingsOpen.value = false
 }
 
-function onDocumentVisibilityChange(): void {
-  if (typeof document === 'undefined') return
-  if (!isMobile.value) return
-
-  if (document.visibilityState === 'hidden') {
-    mobileHiddenAtMs.value = Date.now()
-    mobileResumeReloadTriggered.value = false
-    return
-  }
-
-  maybeSyncAfterMobileResume()
-}
-
-function onWindowPageShow(event: PageTransitionEvent): void {
-  if (!event.persisted) return
-  maybeSyncAfterMobileResume()
-}
-
 function onWindowFocus(): void {
   if (route.name === 'home') {
     void loadWorkspaceRootOptionsState()
     void refreshDefaultProjectName()
   }
-  maybeSyncAfterMobileResume()
-}
-
-function maybeSyncAfterMobileResume(): void {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return
-  if (!isMobile.value) return
-  if (document.visibilityState !== 'visible') return
-  if (mobileResumeReloadTriggered.value) return
-  if (mobileHiddenAtMs.value === null) return
-
-  const hiddenForMs = Date.now() - mobileHiddenAtMs.value
-  if (hiddenForMs < MOBILE_RESUME_RELOAD_MIN_HIDDEN_MS) return
-
-  mobileResumeReloadTriggered.value = true
-  mobileHiddenAtMs.value = null
-  void syncAfterMobileResume()
-}
-
-async function syncAfterMobileResume(): Promise<void> {
-  if (mobileResumeSyncInProgress.value) return
-  mobileResumeSyncInProgress.value = true
-
-  try {
-    await refreshAll({
-      includeSelectedThreadMessages: true,
-      awaitAncillaryRefreshes: true,
-    })
-    await syncThreadSelectionWithRoute()
-  } finally {
-    mobileResumeSyncInProgress.value = false
-  }
 }
 
 function onSubmitThreadMessage(payload: { text: string; imageUrls: string[]; fileAttachments: Array<{ label: string; path: string; fsPath: string }>; skills: Array<{ name: string; path: string }>; mode: 'steer' | 'queue' }): void {
   const text = payload.text
-  scheduleMobileConversationJumpToLatest()
   const editingState = editingQueuedMessageState.value
   const queueInsertIndex =
     payload.mode === 'queue'
@@ -3474,24 +3174,6 @@ function onEditQueuedMessage(messageId: string): void {
   removeQueuedMessage(messageId)
 }
 
-
-function scheduleMobileConversationJumpToLatest(): void {
-  if (!isMobile.value || isHomeRoute.value) return
-
-  const jumpToLatest = () => {
-    threadConversationRef.value?.jumpToLatest()
-  }
-
-  jumpToLatest()
-  void nextTick(() => {
-    jumpToLatest()
-    if (typeof window === 'undefined') return
-    window.requestAnimationFrame(() => {
-      jumpToLatest()
-      window.requestAnimationFrame(jumpToLatest)
-    })
-  })
-}
 
 function onSelectNewThreadFolder(cwd: string): void {
   newThreadCwd.value = cwd.trim()
@@ -4214,7 +3896,6 @@ function onRollback(payload: { turnId: string }): void {
 function onImplementPlan(payload: { turnId: string }): void {
   if (isHomeRoute.value || !selectedThreadId.value) return
   setSelectedCollaborationMode('default')
-  scheduleMobileConversationJumpToLatest()
   void sendMessageToSelectedThread('Implement', [], [], 'steer', [], undefined, 'default')
 }
 
@@ -4883,12 +4564,6 @@ watch(
 )
 
 
-watch(isMobile, (mobile) => {
-  if (mobile && !isSidebarCollapsed.value) {
-    setSidebarCollapsed(true)
-  }
-}, { immediate: true })
-
 async function submitFirstMessageForNewThread(
   text: string,
   imageUrls: string[] = [],
@@ -4925,7 +4600,6 @@ async function submitFirstMessageForNewThread(
     const threadId = await sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments)
     if (!threadId) return
     await router.replace({ name: 'thread', params: { threadId } })
-    scheduleMobileConversationJumpToLatest()
   } catch {
     // Error is already reflected in state.
   }
@@ -4962,7 +4636,6 @@ async function onTryDirectoryItem(payload: DirectoryTryItemPayload): Promise<voi
     const threadId = await sendMessageToNewThread(text, targetCwd, [], skills, [])
     if (!threadId) return
     await router.replace({ name: 'thread', params: { threadId } })
-    scheduleMobileConversationJumpToLatest()
   } catch {
     // Error is already reflected in shared thread state.
   } finally {
@@ -5015,12 +4688,6 @@ async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
 
 .content-root {
   @apply h-full min-h-0 min-w-0 w-full flex flex-col overflow-y-hidden overflow-x-hidden bg-white;
-}
-
-.content-root.is-virtual-keyboard-open {
-  height: var(--visual-viewport-height);
-  max-height: var(--visual-viewport-height);
-  transform: translateY(var(--visual-viewport-offset-top));
 }
 
 .sidebar-thread-controls-host {
@@ -5116,32 +4783,7 @@ async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
 }
 
 .content-body {
-  @apply flex-1 min-h-0 min-w-0 w-full flex flex-col gap-2 sm:gap-3 pt-1 pb-2 sm:pb-4 overflow-x-hidden;
-}
-
-.content-root.is-virtual-keyboard-open .content-body {
-  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
-}
-
-.content-root.is-virtual-keyboard-open .content-grid {
-  gap: 0.5rem;
-}
-
-.content-root.is-virtual-keyboard-open .content-thread {
-  min-height: 0;
-}
-
-.content-root.is-virtual-keyboard-open .composer-with-queue {
-  gap: 0.375rem;
-  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
-}
-
-.content-root.is-virtual-keyboard-open .content-thread-terminal-panel {
-  min-height: 0;
-}
-
-.content-root.is-virtual-keyboard-open .content-keyboard-spacer {
-  display: none;
+  @apply flex-1 min-h-0 min-w-0 w-full flex flex-col gap-3 pt-1 pb-4 overflow-x-hidden;
 }
 
 
@@ -5163,7 +4805,7 @@ async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
 }
 
 .composer-with-queue {
-  @apply w-full shrink-0 px-2 sm:px-6 flex flex-col gap-2;
+  @apply w-full shrink-0 px-6 flex flex-col gap-2;
 }
 
 .composer-runtime-error {
@@ -5248,19 +4890,19 @@ async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
 }
 
 .new-thread-empty {
-  @apply flex-1 min-h-0 flex flex-col items-center justify-center gap-0.5 px-3 sm:px-6;
+  @apply flex-1 min-h-0 flex flex-col items-center justify-center gap-0.5 px-6;
 }
 
 .new-thread-hero {
-  @apply m-0 text-2xl sm:text-[2.5rem] font-normal leading-[1.05] text-zinc-900;
+  @apply m-0 text-[2.5rem] font-normal leading-[1.05] text-zinc-900;
 }
 
 .new-thread-folder-dropdown {
-  @apply text-2xl sm:text-[2.5rem] text-zinc-500;
+  @apply text-[2.5rem] text-zinc-500;
 }
 
 .new-thread-folder-dropdown :deep(.composer-dropdown-trigger) {
-  @apply h-auto p-0 text-2xl sm:text-[2.5rem] leading-[1.05];
+  @apply h-auto p-0 text-[2.5rem] leading-[1.05];
 }
 
 .new-thread-folder-dropdown :deep(.composer-dropdown-value) {
@@ -5268,7 +4910,7 @@ async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
 }
 
 .new-thread-folder-dropdown :deep(.composer-dropdown-chevron) {
-  @apply h-4 w-4 sm:h-5 sm:w-5 mt-0;
+  @apply h-5 w-5 mt-0;
 }
 
 .new-thread-folder-selected {
@@ -5308,11 +4950,11 @@ async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
 }
 
 .new-thread-launch-card-title {
-  @apply m-0 text-xl font-semibold leading-tight text-zinc-950 sm:text-2xl;
+  @apply m-0 text-2xl font-semibold leading-tight text-zinc-950;
 }
 
 .new-thread-launch-card-text {
-  @apply m-0 max-w-2xl text-sm leading-6 text-zinc-700 sm:text-[15px];
+  @apply m-0 max-w-2xl text-[15px] leading-6 text-zinc-700;
 }
 
 .new-thread-launch-card-actions {
@@ -5640,10 +5282,6 @@ async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
   @apply border-t border-zinc-100;
 }
 
-.sidebar-settings-telegram-panel {
-  @apply border-t border-zinc-100 bg-zinc-50/70 px-3 py-3;
-}
-
 .sidebar-settings-field {
   @apply flex flex-col gap-1.5;
 }
@@ -5656,29 +5294,8 @@ async function loadWorktreeBranches(sourceCwd: string): Promise<void> {
   @apply text-xs font-medium text-zinc-700;
 }
 
-.sidebar-settings-input,
-.sidebar-settings-textarea {
+.sidebar-settings-input {
   @apply w-full rounded-md border border-zinc-200 bg-white px-2.5 py-2 text-sm text-zinc-800 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200;
-}
-
-.sidebar-settings-textarea {
-  @apply min-h-20 resize-y font-mono text-xs;
-}
-
-.sidebar-settings-field-help {
-  @apply mt-2 text-xs leading-5 text-zinc-500;
-}
-
-.sidebar-settings-telegram-error {
-  @apply mt-2 rounded-md bg-rose-50 px-2.5 py-2 text-xs text-rose-700;
-}
-
-.sidebar-settings-telegram-actions {
-  @apply mt-3 flex items-center justify-end;
-}
-
-.sidebar-settings-telegram-save {
-  @apply rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-default disabled:opacity-60;
 }
 
 .sidebar-settings-account-section {

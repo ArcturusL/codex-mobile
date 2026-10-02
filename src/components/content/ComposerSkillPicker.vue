@@ -106,7 +106,7 @@ watch(query, () => {
 @reference "tailwindcss";
 
 .skill-picker {
-  @apply absolute z-40 w-72 max-sm:!left-4 max-sm:!right-4 max-sm:!w-auto max-h-64 rounded-xl border border-zinc-200 bg-white shadow-lg flex flex-col overflow-hidden;
+  @apply absolute z-40 w-72 max-h-64 rounded-xl border border-zinc-200 bg-white shadow-lg flex flex-col overflow-hidden;
 }
 
 .skill-picker-header {

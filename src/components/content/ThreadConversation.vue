@@ -828,7 +828,7 @@
 
     <div v-if="activeDiffViewerChange" class="diff-viewer-backdrop" @click="closeDiffViewer">
       <div class="diff-viewer-shell" @click.stop>
-        <aside v-if="!isMobile" class="diff-viewer-sidebar">
+        <aside class="diff-viewer-sidebar">
           <div class="diff-viewer-sidebar-header">
             <p class="diff-viewer-sidebar-title">Changed files</p>
             <p class="diff-viewer-sidebar-count">{{ formatFileChangeCountLabel(diffViewerChanges.length) }}</p>
@@ -867,14 +867,6 @@
               </p>
             </div>
             <div class="diff-viewer-toolbar-actions">
-              <button
-                v-if="isMobile"
-                type="button"
-                class="diff-viewer-mobile-files-button"
-                @click="toggleDiffViewerFileList"
-              >
-                {{ formatFileChangeCountLabel(diffViewerChanges.length) }}
-              </button>
               <button class="image-modal-close diff-viewer-close" type="button" aria-label="Close diff viewer" @click="closeDiffViewer">
                 <IconTablerX class="icon-svg" />
               </button>
@@ -906,40 +898,6 @@
           </div>
         </section>
 
-        <Transition name="diff-viewer-sheet">
-          <div
-            v-if="isMobile && isDiffViewerFileListOpen"
-            class="diff-viewer-mobile-sheet-backdrop"
-            @click="closeDiffViewerFileList"
-          >
-            <div class="diff-viewer-mobile-sheet" @click.stop>
-              <div class="diff-viewer-mobile-sheet-handle" aria-hidden="true"></div>
-              <div class="diff-viewer-mobile-sheet-header">
-                <p class="diff-viewer-sidebar-title">Changed files</p>
-                <p class="diff-viewer-sidebar-count">{{ formatFileChangeCountLabel(diffViewerChanges.length) }}</p>
-              </div>
-              <div class="diff-viewer-mobile-sheet-list">
-                <button
-                  v-for="change in diffViewerChanges"
-                  :key="`diff-viewer-sheet:${fileChangeKey(change)}`"
-                  type="button"
-                  class="diff-viewer-file-button"
-                  :data-active="fileChangeKey(change) === fileChangeKey(activeDiffViewerChange)"
-                  @click="selectDiffViewerChange(change)"
-                >
-                  <span class="file-change-badge" :data-operation="fileChangeOperationTone(change)">
-                    {{ fileChangeOperationLabel(change) }}
-                  </span>
-                  <span class="diff-viewer-file-label">
-                    {{ displayFileChangePath(change.path) }}
-                    <template v-if="change.movedToPath"> → {{ displayFileChangePath(change.movedToPath) }}</template>
-                  </span>
-                  <span v-if="formatFileChangeDelta(change)" class="diff-viewer-file-delta">{{ formatFileChangeDelta(change) }}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </Transition>
       </div>
     </div>
   </section>
@@ -952,7 +910,6 @@ import 'katex/dist/katex.min.css'
 import type { UiFileChange, UiLiveOverlay, UiMessage, UiPlanStep, UiServerRequest } from '../../types/codex'
 import { updateThreadFileChanges } from '../../api/codexGateway'
 import { useFeedbackDiagnostics } from '../../composables/useFeedbackDiagnostics'
-import { useMobile } from '../../composables/useMobile'
 import { copyTextToClipboard, copyTextWithSelectionFallback } from '../../utils/clipboard'
 
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
@@ -971,14 +928,12 @@ const expandedWorkedIds = ref<Set<string>>(new Set())
 const expandedFileChangeSummaryIds = ref<Set<string>>(new Set())
 const activeDiffViewerSummary = ref<TurnFileChangeSummary | null>(null)
 const activeDiffViewerChangeKey = ref('')
-const isDiffViewerFileListOpen = ref(false)
 const fileLinkContextMenuRef = ref<HTMLElement | null>(null)
 const isFileLinkContextMenuVisible = ref(false)
 const fileLinkContextMenuX = ref(0)
 const fileLinkContextMenuY = ref(0)
 const fileLinkContextBrowseUrl = ref('')
 const fileLinkContextEditUrl = ref('')
-const { isMobile } = useMobile()
 const { buildFeedbackMailto, feedbackMailtoBase, recordVisibleFailure } = useFeedbackDiagnostics()
 const feedbackMailto = feedbackMailtoBase()
 
@@ -1301,28 +1256,15 @@ function openDiffViewer(summary: TurnFileChangeSummary | null, change: UiFileCha
   if (!summary) return
   activeDiffViewerSummary.value = summary
   activeDiffViewerChangeKey.value = fileChangeKey(change)
-  isDiffViewerFileListOpen.value = false
 }
 
 function closeDiffViewer(): void {
   activeDiffViewerSummary.value = null
   activeDiffViewerChangeKey.value = ''
-  isDiffViewerFileListOpen.value = false
-}
-
-function toggleDiffViewerFileList(): void {
-  isDiffViewerFileListOpen.value = !isDiffViewerFileListOpen.value
-}
-
-function closeDiffViewerFileList(): void {
-  isDiffViewerFileListOpen.value = false
 }
 
 function selectDiffViewerChange(change: UiFileChange): void {
   activeDiffViewerChangeKey.value = fileChangeKey(change)
-  if (isMobile.value) {
-    isDiffViewerFileListOpen.value = false
-  }
 }
 
 function commandExecutionDetails(message: UiMessage): string {
@@ -4395,10 +4337,6 @@ async function loadMoreAbove(): Promise<void> {
   }
 }
 
-defineExpose({
-  jumpToLatest,
-})
-
 function bindPendingImageHandlers(): void {
   if (!shouldLockToBottom()) return
   const container = conversationListRef.value
@@ -4623,7 +4561,7 @@ onBeforeUnmount(() => {
 }
 
 .conversation-list {
-  @apply h-full min-h-0 list-none m-0 px-2 sm:px-6 py-0 overflow-y-auto overflow-x-visible flex flex-col gap-2 sm:gap-3;
+  @apply h-full min-h-0 list-none m-0 px-6 py-0 overflow-y-auto overflow-x-visible flex flex-col gap-3;
 }
 
 .conversation-load-more {
@@ -5552,15 +5490,15 @@ onBeforeUnmount(() => {
 }
 
 .diff-viewer-backdrop {
-  @apply fixed inset-0 z-50 bg-black/45 p-3 sm:p-6 flex items-center justify-center;
+  @apply fixed inset-0 z-50 bg-black/45 p-6 flex items-center justify-center;
 }
 
 .diff-viewer-shell {
-  @apply relative grid h-[min(88vh,920px)] w-[min(96vw,1320px)] grid-cols-1 overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl lg:grid-cols-[320px_minmax(0,1fr)];
+  @apply relative grid h-[min(88vh,920px)] w-[min(96vw,1320px)] grid-cols-[320px_minmax(0,1fr)] overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl;
 }
 
 .diff-viewer-sidebar {
-  @apply flex min-h-0 flex-col border-b border-zinc-200 bg-zinc-50 lg:border-b-0 lg:border-r;
+  @apply flex min-h-0 flex-col border-r border-zinc-200 bg-zinc-50;
 }
 
 .diff-viewer-sidebar-header {
@@ -5621,10 +5559,6 @@ onBeforeUnmount(() => {
 
 .diff-viewer-close {
   @apply static shrink-0 border-zinc-200 bg-zinc-100 text-zinc-700;
-}
-
-.diff-viewer-mobile-files-button {
-  @apply inline-flex items-center rounded-full border border-zinc-200 bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-700;
 }
 
 .diff-viewer-empty {
@@ -5718,93 +5652,4 @@ onBeforeUnmount(() => {
   @apply text-zinc-100;
 }
 
-.diff-viewer-mobile-sheet-backdrop {
-  @apply absolute inset-0 z-20 bg-black/35 flex items-end;
-}
-
-.diff-viewer-mobile-sheet {
-  @apply w-full max-h-[70vh] rounded-t-3xl bg-white shadow-2xl border-t border-zinc-200 flex flex-col overflow-hidden;
-}
-
-.diff-viewer-mobile-sheet-handle {
-  @apply mx-auto mt-3 h-1.5 w-12 rounded-full bg-zinc-300;
-}
-
-.diff-viewer-mobile-sheet-header {
-  @apply flex items-center justify-between gap-3 px-4 pt-3 pb-2 border-b border-zinc-200;
-}
-
-.diff-viewer-mobile-sheet-list {
-  @apply flex min-h-0 flex-col gap-2 overflow-y-auto px-3 py-3;
-}
-
-.diff-viewer-sheet-enter-active,
-.diff-viewer-sheet-leave-active {
-  @apply transition-opacity duration-200;
-}
-
-.diff-viewer-sheet-enter-active .diff-viewer-mobile-sheet,
-.diff-viewer-sheet-leave-active .diff-viewer-mobile-sheet {
-  transition: transform 200ms ease;
-}
-
-.diff-viewer-sheet-enter-from,
-.diff-viewer-sheet-leave-to {
-  @apply opacity-0;
-}
-
-.diff-viewer-sheet-enter-from .diff-viewer-mobile-sheet,
-.diff-viewer-sheet-leave-to .diff-viewer-mobile-sheet {
-  transform: translateY(100%);
-}
-
-@media (max-width: 767px) {
-  .diff-viewer-backdrop {
-    @apply p-0 items-stretch;
-  }
-
-  .diff-viewer-shell {
-    @apply h-[100dvh] w-screen rounded-none border-0 shadow-none;
-  }
-
-  .diff-viewer-main {
-    @apply min-w-0;
-  }
-
-  .diff-viewer-toolbar {
-    @apply sticky top-0 z-10 bg-white px-3 py-3;
-  }
-
-  .diff-viewer-title {
-    @apply text-sm leading-5;
-  }
-
-  .diff-viewer-subtitle {
-    @apply text-xs;
-  }
-
-  .diff-viewer-meta {
-    @apply px-3 py-2;
-  }
-
-  .diff-viewer-language {
-    @apply text-[10px];
-  }
-
-  .diff-viewer-line {
-    grid-template-columns: 2.75rem 2.75rem 1.5rem minmax(0, 1fr);
-  }
-
-  .diff-viewer-line-number {
-    @apply px-1.5 py-1 text-[10px];
-  }
-
-  .diff-viewer-line-marker {
-    @apply px-1 py-1 text-[10px];
-  }
-
-  .diff-viewer-line-code {
-    @apply px-2 py-1 text-[11px] leading-5;
-  }
-}
 </style>

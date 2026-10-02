@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, readdir, rm, mkdir, stat, lstat, readlink, symlink } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -549,13 +548,13 @@ const SKILLS_SYNC_MANIFEST_PATH = 'installed-skills.json'
 const SYNC_UPSTREAM_SKILLS_OWNER = 'OpenClawAndroid'
 const SYNC_UPSTREAM_SKILLS_REPO = 'skills'
 const PRIVATE_SYNC_BRANCH = 'main'
-const PUBLIC_UPSTREAM_BRANCH_ANDROID = 'android'
-const PUBLIC_UPSTREAM_BRANCH_DEFAULT = 'main'
+// The public shared-skills repository retains this branch name on desktop hosts.
+const PUBLIC_SHARED_SKILLS_BRANCH = 'android'
 let startupSkillsSyncInitialized = false
 
 type StartupSyncStatus = {
   inProgress: boolean
-  mode: 'unauthenticated-bootstrap' | 'authenticated-fork-sync' | 'idle'
+  mode: 'authenticated-fork-sync' | 'idle'
   branch: string
   lastAction: string
   lastRunAtIso: string
@@ -721,20 +720,6 @@ async function completeGithubDeviceLogin(deviceCode: string): Promise<{ token: s
   const payload = await resp.json() as GithubTokenResponse
   if (!payload.access_token) return { token: null, error: payload.error || 'unknown_error' }
   return { token: payload.access_token, error: null }
-}
-
-function isAndroidLikeRuntime(): boolean {
-  if (process.platform === 'android') return true
-  if (existsSync('/data/data/com.termux')) return true
-  if (process.env.TERMUX_VERSION) return true
-  const prefix = process.env.PREFIX?.toLowerCase() ?? ''
-  if (prefix.includes('/com.termux/')) return true
-  const proot = process.env.PROOT_TMP_DIR?.toLowerCase() ?? ''
-  return proot.length > 0
-}
-
-function getPreferredPublicUpstreamBranch(): string {
-  return isAndroidLikeRuntime() ? PUBLIC_UPSTREAM_BRANCH_ANDROID : PUBLIC_UPSTREAM_BRANCH_DEFAULT
 }
 
 function isUpstreamSkillsRepo(repoOwner: string, repoName: string): boolean {
@@ -1221,7 +1206,7 @@ async function syncInstalledSkillsFolderToRepo(
 async function pullInstalledSkillsFolderFromRepo(token: string, repoOwner: string, repoName: string): Promise<string> {
   const remoteUrl = toGitHubTokenRemote(repoOwner, repoName, token)
   const isUpstream = isUpstreamSkillsRepo(repoOwner, repoName)
-  const branch = isUpstream ? PUBLIC_UPSTREAM_BRANCH_ANDROID : PRIVATE_SYNC_BRANCH
+  const branch = isUpstream ? PUBLIC_SHARED_SKILLS_BRANCH : PRIVATE_SYNC_BRANCH
   return await ensureSkillsWorkingTreeRepo(remoteUrl, branch, {
     ...(isUpstream ? { localDir: getSharedSkillsInstallDir() } : {}),
     overwriteLocalFiles: isUpstream,
@@ -1230,7 +1215,7 @@ async function pullInstalledSkillsFolderFromRepo(token: string, repoOwner: strin
 
 async function bootstrapSkillsFromUpstreamIntoLocal(): Promise<string> {
   const repoUrl = `https://github.com/${SYNC_UPSTREAM_SKILLS_OWNER}/${SYNC_UPSTREAM_SKILLS_REPO}.git`
-  return await ensureSkillsWorkingTreeRepo(repoUrl, PUBLIC_UPSTREAM_BRANCH_ANDROID, {
+  return await ensureSkillsWorkingTreeRepo(repoUrl, PUBLIC_SHARED_SKILLS_BRANCH, {
     localDir: getSharedSkillsInstallDir(),
     overwriteLocalFiles: true,
   })
@@ -1330,19 +1315,9 @@ async function runSkillsSyncStartup(appServer: AppServerLike): Promise<void> {
     const state = await readSkillsSyncState()
     if (!state.githubToken) {
       await ensureCodexAgentsSymlinkToSkillsAgents()
-      if (!isAndroidLikeRuntime()) {
-        startupSyncStatus.mode = 'idle'
-        startupSyncStatus.lastAction = 'skip-upstream-non-android'
-        startupSyncStatus.lastSuccessAtIso = new Date().toISOString()
-        return
-      }
-      startupSyncStatus.mode = 'unauthenticated-bootstrap'
-      startupSyncStatus.branch = getPreferredPublicUpstreamBranch()
-      startupSyncStatus.lastAction = 'pull-upstream'
-      await bootstrapSkillsFromUpstreamIntoLocal()
-      try { await appServer.rpc('skills/list', { forceReload: true }) } catch {}
+      startupSyncStatus.mode = 'idle'
+      startupSyncStatus.lastAction = 'skip-upstream-without-login'
       startupSyncStatus.lastSuccessAtIso = new Date().toISOString()
-      startupSyncStatus.lastAction = 'pull-upstream-complete'
       return
     }
     startupSyncStatus.mode = 'authenticated-fork-sync'

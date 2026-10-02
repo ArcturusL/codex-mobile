@@ -17,7 +17,6 @@ import { buildAppServerArgs } from './appServerRuntimeConfig.js'
 import { callRpcWithRateLimitDecodeRecovery } from './rateLimitDecodeRecovery.js'
 import { handleReviewRoutes } from './reviewGit.js'
 import { handleSkillsRoutes, initializeSkillsSyncOnStartup } from './skillsRoutes.js'
-import { TelegramThreadBridge } from './telegramThreadBridge.js'
 import {
   getRandomFreeKey,
   getFreeKeyCount,
@@ -4883,10 +4882,6 @@ function getCodexGlobalStatePath(): string {
   return join(getCodexHomeDir(), '.codex-global-state.json')
 }
 
-function getTelegramBridgeConfigPath(): string {
-  return join(getCodexHomeDir(), 'telegram-bridge.json')
-}
-
 function getCodexSessionIndexPath(): string {
   return join(getCodexHomeDir(), 'session_index.jsonl')
 }
@@ -5376,12 +5371,6 @@ type SessionIndexThreadTitleCacheState = {
 let sessionIndexThreadTitleCacheState: SessionIndexThreadTitleCacheState = {
   fileSignature: null,
   cache: EMPTY_THREAD_TITLE_CACHE,
-}
-
-type TelegramBridgeConfigState = {
-  botToken: string
-  chatIds: number[]
-  allowedUserIds: Array<number | '*'>
 }
 
 function normalizeThreadTitleCache(value: unknown): ThreadTitleCache {
@@ -6067,73 +6056,6 @@ async function rollbackCreatedWorktree(
   if (branchName) {
     await runCommand('git', ['branch', '-D', branchName], { cwd: gitRoot }).catch(() => undefined)
   }
-}
-
-function normalizeTelegramBridgeConfig(value: unknown): TelegramBridgeConfigState {
-  const record = asRecord(value)
-  if (!record) return { botToken: '', chatIds: [], allowedUserIds: [] }
-  const botToken = typeof record.botToken === 'string' ? record.botToken.trim() : ''
-  const rawChatIds = Array.isArray(record.chatIds) ? record.chatIds : []
-  const chatIds = Array.from(new Set(rawChatIds
-    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
-    .map((value) => Math.trunc(value)))).slice(0, 50)
-  const rawAllowedUserIds = Array.isArray(record.allowedUserIds) ? record.allowedUserIds : []
-  const allowAllUsers = rawAllowedUserIds.some((value) => typeof value === 'string' && value.trim() === '*')
-  const normalizedAllowedUserIds = Array.from(new Set(rawAllowedUserIds
-    .map((value) => {
-      if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value)
-      if (typeof value === 'string') {
-        const normalized = value.trim().replace(/^(telegram|tg):/i, '').trim()
-        if (/^-?\d+$/.test(normalized)) {
-          return Number.parseInt(normalized, 10)
-        }
-      }
-      return Number.NaN
-    })
-    .filter((value) => Number.isFinite(value)))).slice(0, 100)
-  const allowedUserIds: Array<number | '*'> = allowAllUsers
-    ? ['*' as const, ...normalizedAllowedUserIds]
-    : normalizedAllowedUserIds
-  return { botToken, chatIds, allowedUserIds }
-}
-
-async function readTelegramBridgeConfig(): Promise<TelegramBridgeConfigState> {
-  const telegramConfigPath = getTelegramBridgeConfigPath()
-  try {
-    const raw = await readFile(telegramConfigPath, 'utf8')
-    const payload = asRecord(JSON.parse(raw)) ?? {}
-    return normalizeTelegramBridgeConfig(payload)
-  } catch {
-    return { botToken: '', chatIds: [], allowedUserIds: [] }
-  }
-}
-
-async function writeTelegramBridgeConfig(nextState: TelegramBridgeConfigState): Promise<void> {
-  const normalized = normalizeTelegramBridgeConfig(nextState)
-  const telegramConfigPath = getTelegramBridgeConfigPath()
-  await writeFile(telegramConfigPath, JSON.stringify({
-    botToken: normalized.botToken,
-    chatIds: normalized.chatIds,
-    allowedUserIds: normalized.allowedUserIds,
-  }), 'utf8')
-}
-
-let telegramBridgeConfigMutation: Promise<void> = Promise.resolve()
-
-function rememberTelegramChatId(chatId: number): Promise<void> {
-  const normalizedChatId = Math.trunc(chatId)
-  if (!Number.isFinite(normalizedChatId)) return Promise.resolve()
-
-  telegramBridgeConfigMutation = telegramBridgeConfigMutation.then(async () => {
-    const current = await readTelegramBridgeConfig()
-    if (current.chatIds.includes(normalizedChatId)) return
-    const next = {
-      ...current,
-      chatIds: [normalizedChatId, ...current.chatIds].slice(0, 50),
-    }
-    await writeTelegramBridgeConfig(next)
-  })
-  return telegramBridgeConfigMutation
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -7420,7 +7342,6 @@ type SharedBridgeState = {
   appServer: AppServerProcess
   terminalManager: ThreadTerminalManager
   methodCatalog: MethodCatalog
-  telegramBridge: TelegramThreadBridge
   backendQueueProcessor: BackendQueueProcessor
 }
 
@@ -7451,11 +7372,6 @@ function getSharedBridgeState(): SharedBridgeState {
     terminalManager,
     methodCatalog: new MethodCatalog(),
     backendQueueProcessor,
-    telegramBridge: new TelegramThreadBridge(appServer, {
-      onChatSeen: (chatId) => {
-        void rememberTelegramChatId(chatId).catch(() => {})
-      },
-    }),
   }
   globalScope[SHARED_BRIDGE_KEY] = created
   return created
@@ -7538,7 +7454,7 @@ async function buildThreadSearchIndex(appServer: AppServerProcess): Promise<Thre
 }
 
 export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
-  const { appServer, terminalManager, methodCatalog, telegramBridge, backendQueueProcessor } = getSharedBridgeState()
+  const { appServer, terminalManager, methodCatalog, backendQueueProcessor } = getSharedBridgeState()
   let threadSearchIndex: ThreadSearchIndex | null = null
   let threadSearchIndexPromise: Promise<ThreadSearchIndex> | null = null
 
@@ -7557,14 +7473,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
     return threadSearchIndexPromise
   }
   void initializeSkillsSyncOnStartup(appServer)
-  void readTelegramBridgeConfig()
-    .then((config) => {
-      if (!config.botToken) return
-      telegramBridge.configureToken(config.botToken)
-      telegramBridge.configureAllowedUserIds(config.allowedUserIds)
-      telegramBridge.start()
-    })
-    .catch(() => {})
 
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const requestStartNs = process.hrtime.bigint()
@@ -9658,52 +9566,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
         return
       }
 
-      if (req.method === 'POST' && url.pathname === '/codex-api/telegram/configure-bot') {
-        const payload = asRecord(await readJsonBody(req))
-        const botToken = typeof payload?.botToken === 'string' ? payload.botToken.trim() : ''
-        const rawAllowedUserIds = Array.isArray(payload?.allowedUserIds) ? payload.allowedUserIds : []
-        if (!botToken) {
-          setJson(res, 400, { error: 'Missing botToken' })
-          return
-        }
-        const config = normalizeTelegramBridgeConfig({
-          botToken,
-          allowedUserIds: rawAllowedUserIds,
-        })
-        if (config.allowedUserIds.length === 0) {
-          setJson(res, 400, { error: 'At least one allowed Telegram user ID is required' })
-          return
-        }
-
-        telegramBridge.configureToken(config.botToken)
-        telegramBridge.configureAllowedUserIds(config.allowedUserIds)
-        telegramBridge.start()
-        const existingConfig = await readTelegramBridgeConfig()
-        await writeTelegramBridgeConfig({
-          botToken: config.botToken,
-          chatIds: existingConfig.chatIds,
-          allowedUserIds: config.allowedUserIds,
-        })
-        setJson(res, 200, { ok: true })
-        return
-      }
-
-      if (req.method === 'GET' && url.pathname === '/codex-api/telegram/config') {
-        const config = await readTelegramBridgeConfig()
-        setJson(res, 200, {
-          data: {
-            botToken: config.botToken,
-            allowedUserIds: config.allowedUserIds,
-          },
-        })
-        return
-      }
-
-      if (req.method === 'GET' && url.pathname === '/codex-api/telegram/status') {
-        setJson(res, 200, { data: telegramBridge.getStatus() })
-        return
-      }
-
       if (req.method === 'GET' && url.pathname === '/codex-api/events') {
         res.statusCode = 200
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
@@ -9743,7 +9605,6 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
   middleware.dispose = () => {
     threadSearchIndex = null
-    telegramBridge.stop()
     terminalManager.dispose()
     backendQueueProcessor.dispose()
     appServer.dispose()

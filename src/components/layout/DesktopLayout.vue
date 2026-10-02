@@ -1,27 +1,15 @@
 <template>
-  <div class="desktop-layout" :class="{ 'is-mobile': isMobile }" :style="layoutStyle">
-    <Teleport v-if="isMobile" to="body">
-      <Transition name="drawer">
-        <div v-if="!isSidebarCollapsed" class="mobile-drawer-backdrop" @click="$emit('close-sidebar')">
-          <aside class="mobile-drawer" @click.stop>
-            <slot name="sidebar" />
-          </aside>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <template v-if="!isMobile">
-      <aside v-if="!isSidebarCollapsed" class="desktop-sidebar">
-        <slot name="sidebar" />
-      </aside>
-      <button
-        v-if="!isSidebarCollapsed"
-        class="desktop-resize-handle"
-        type="button"
-        aria-label="Resize sidebar"
-        @mousedown="onResizeHandleMouseDown"
-      />
-    </template>
+  <div class="desktop-layout" :style="layoutStyle">
+    <aside v-if="!isSidebarCollapsed" class="desktop-sidebar">
+      <slot name="sidebar" />
+    </aside>
+    <button
+      v-if="!isSidebarCollapsed"
+      class="desktop-resize-handle"
+      type="button"
+      aria-label="Resize sidebar"
+      @mousedown="onResizeHandleMouseDown"
+    />
 
     <section class="desktop-main">
       <slot name="content" />
@@ -31,7 +19,6 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useMobile } from '../../composables/useMobile'
 
 const props = withDefaults(
   defineProps<{
@@ -41,12 +28,6 @@ const props = withDefaults(
     isSidebarCollapsed: false,
   },
 )
-
-defineEmits<{
-  'close-sidebar': []
-}>()
-
-const { isMobile } = useMobile()
 
 const SIDEBAR_WIDTH_KEY = 'codex-web-local.sidebar-width.v1'
 const MIN_SIDEBAR_WIDTH = 260
@@ -68,7 +49,7 @@ function loadSidebarWidth(): number {
 const sidebarWidth = ref(loadSidebarWidth())
 
 const layoutStyle = computed(() => {
-  if (isMobile.value || props.isSidebarCollapsed) {
+  if (props.isSidebarCollapsed) {
     return {
       '--sidebar-width': '0px',
       '--layout-columns': 'minmax(0, 1fr)',
@@ -112,7 +93,6 @@ function onResizeHandleMouseDown(event: MouseEvent): void {
 .desktop-layout {
   @apply isolate grid bg-slate-100 text-slate-900 overflow-hidden;
   height: 100vh;
-  height: 100dvh;
   grid-template-columns: var(--layout-columns);
 }
 
@@ -133,37 +113,4 @@ function onResizeHandleMouseDown(event: MouseEvent): void {
   @apply relative z-[100] bg-white min-h-0 overflow-y-hidden overflow-x-visible;
 }
 
-.mobile-drawer-backdrop {
-  @apply fixed inset-0 z-40 bg-black/40;
-}
-
-.mobile-drawer {
-  @apply absolute top-0 left-0 bottom-0 w-[85vw] max-w-80 bg-slate-100 overflow-hidden shadow-2xl;
-}
-
-.drawer-enter-active,
-.drawer-leave-active {
-  @apply transition-opacity duration-200;
-}
-
-.drawer-enter-active .mobile-drawer,
-.drawer-leave-active .mobile-drawer {
-  transition: transform 200ms ease;
-}
-
-.drawer-enter-from {
-  @apply opacity-0;
-}
-
-.drawer-enter-from .mobile-drawer {
-  transform: translateX(-100%);
-}
-
-.drawer-leave-to {
-  @apply opacity-0;
-}
-
-.drawer-leave-to .mobile-drawer {
-  transform: translateX(-100%);
-}
 </style>

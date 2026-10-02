@@ -15,7 +15,7 @@ Inline code parsing preserves asterisks inside code spans without affecting late
 
 #### Expected Results
 - Asterisks inside inline code do not open italic parsing.
-- Inline code does not show a grey box or spill styling over later prose when wrapping on a mobile-width viewport.
+- Inline code does not show a grey box or spill styling over later prose when wrapping in a narrow desktop conversation panel.
 - Light and dark themes both keep normal prose and inline code visually distinct.
 
 #### Rollback/Cleanup

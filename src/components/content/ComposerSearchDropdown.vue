@@ -182,19 +182,6 @@ function updateMenuPosition(): void {
   const desiredWidth = Math.min(384, viewportWidth - 16)
   const left = Math.max(8, Math.min(rect.right - desiredWidth, viewportWidth - desiredWidth - 8))
 
-  if (viewportWidth < 640) {
-    menuStyle.value = {
-      position: 'fixed',
-      left: '0.5rem',
-      right: '0.5rem',
-      width: 'auto',
-      top: openDirection.value === 'up' ? 'auto' : `${rect.bottom + 8}px`,
-      bottom: openDirection.value === 'up' ? `${viewportHeight - rect.top + 8}px` : 'auto',
-      zIndex: '120',
-    }
-    return
-  }
-
   menuStyle.value = {
     position: 'fixed',
     width: `${desiredWidth}px`,
@@ -291,12 +278,6 @@ onBeforeUnmount(() => {
 
 .search-dropdown-menu-wrap {
   @apply z-[120];
-}
-
-@media (max-width: 639px) {
-  .search-dropdown-menu-wrap {
-    max-width: none;
-  }
 }
 
 .search-dropdown-search-wrap {

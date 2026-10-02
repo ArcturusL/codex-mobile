@@ -9,7 +9,6 @@ import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import { get as httpsGet } from 'node:https'
 import { Command } from 'commander'
-import qrcode from 'qrcode-terminal'
 import {
   canRunCommand,
   getNpmGlobalBinDir,
@@ -57,10 +56,6 @@ async function readCliVersion(): Promise<string> {
   } catch {
     return 'unknown'
   }
-}
-
-function isTermuxRuntime(): boolean {
-  return Boolean(process.env.TERMUX_VERSION || process.env.PREFIX?.includes('/com.termux/'))
 }
 
 function runOrFail(command: string, args: string[], label: string): void {
@@ -214,38 +209,18 @@ function ensureCodexInstalled(): string | null {
       if (status === 0) {
         return
       }
-      if (isTermuxRuntime()) {
-        throw new Error(`${label} failed with exit code ${String(status)}`)
-      }
       const userPrefix = getUserNpmPrefix()
       console.log(`\nGlobal npm install requires elevated permissions. Retrying with --prefix ${userPrefix}...\n`)
       runOrFail('npm', ['install', '-g', '--prefix', userPrefix, pkg], `${label} (user prefix)`)
       process.env.PATH = prependPathEntry(process.env.PATH ?? '', getNpmGlobalBinDir(userPrefix))
     }
 
-    if (isTermuxRuntime()) {
-      console.log('\nCodex CLI not found. Installing Termux-compatible Codex CLI from npm...\n')
-      installWithFallback('@mmmbuto/codex-cli-termux', 'Codex CLI install')
-      codexCommand = resolveCodexCommand()
-      if (!codexCommand) {
-        console.log('\nTermux npm package did not expose `codex`. Installing official CLI fallback...\n')
-        installWithFallback('@openai/codex', 'Codex CLI fallback install')
-      }
-    } else {
-      console.log('\nCodex CLI not found. Installing official Codex CLI from npm...\n')
-      installWithFallback('@openai/codex', 'Codex CLI install')
-    }
+    console.log('\nCodex CLI not found. Installing official Codex CLI from npm...\n')
+    installWithFallback('@openai/codex', 'Codex CLI install')
 
     codexCommand = resolveCodexCommand()
-    if (!codexCommand && !isTermuxRuntime()) {
-      // Non-Termux path should resolve after official package install.
-      throw new Error('Official Codex CLI install completed but binary is still not available in PATH')
-    }
-    if (!codexCommand && isTermuxRuntime()) {
-      codexCommand = resolveCodexCommand()
-    }
     if (!codexCommand) {
-      throw new Error('Codex CLI install completed but binary is still not available in PATH')
+      throw new Error('Official Codex CLI install completed but binary is still not available in PATH')
     }
     console.log('\nCodex CLI installed.\n')
   }
@@ -280,17 +255,6 @@ async function persistGeneratedPassword(password: string): Promise<string> {
   return passwordPath
 }
 
-function printTermuxKeepAlive(lines: string[]): void {
-  if (!isTermuxRuntime()) {
-    return
-  }
-  lines.push('')
-  lines.push('  Android/Termux keep-alive:')
-  lines.push('  1) Keep this Termux session open (do not swipe it away).')
-  lines.push('  2) Disable battery optimization for Termux in Android settings.')
-  lines.push('  3) Optional: run `termux-wake-lock` in another shell.')
-}
-
 function openBrowser(url: string): void {
   const command = process.platform === 'darwin'
     ? { cmd: 'open', args: [url] }
@@ -301,10 +265,6 @@ function openBrowser(url: string): void {
   const child = spawn(command.cmd, command.args, { detached: true, stdio: 'ignore' })
   child.on('error', () => {})
   child.unref()
-}
-
-function buildTunnelAutologinUrl(tunnelUrl: string, _password: string | undefined): string {
-  return tunnelUrl
 }
 
 function parseCloudflaredUrl(chunk: string): string | null {
@@ -584,19 +544,12 @@ async function startServer(options: {
     lines.push('  Use that file to retrieve the password for untrusted origins.')
   }
 
-  const tunnelQrUrl = tunnelUrl ? buildTunnelAutologinUrl(tunnelUrl, password) : null
   if (tunnelUrl) {
-    lines.push(`  Tunnel:   ${tunnelQrUrl ?? tunnelUrl}`)
-    lines.push('  Tunnel QR code below')
+    lines.push(`  Tunnel:   ${tunnelUrl}`)
   }
 
-  printTermuxKeepAlive(lines)
   lines.push('')
   console.log(lines.join('\n'))
-  if (tunnelQrUrl) {
-    qrcode.generate(tunnelQrUrl, { small: true })
-    console.log('')
-  }
   if (options.open) openBrowser(`http://localhost:${String(port)}`)
 
   function shutdown() {

@@ -7,6 +7,7 @@
 ### 维护目标
 
 - 维护仓库为 `https://github.com/ArcturusL/codex-mobile`。项目所有者反馈原作者约四个月未更新，现有功能对最新 Codex 的支持存在缺口，项目自身也有 bug；本 fork 用于持续适配和修复。
+- 当前维护范围为桌面浏览器 WebUI（Linux/macOS/Windows 与远程服务器）；已移除 Telegram、手机专用布局、PWA 安装及 Android/Termux 支持。后续开发和验证不再要求恢复这些入口。
 - 优先保证日常使用可靠，再逐步补齐 Codex 新特性；采用范围明确、便于验证和回退的小步变更。
 - 适配“最新 Codex”时，应核实当时的官方文档、实际安装版本和接口行为，不把本文件中的日期或旧版本假设当成当前事实。记录验证过的 WebUI 与 Codex CLI / app-server 版本组合。
 
@@ -26,7 +27,7 @@
 - 每次升级稳定环境前，至少保留当前可用版本及其完整运行所需产物、配置恢复依据，并对会被变更的持久化数据制作一致性备份。凭据与备份存放于仓库之外，限制访问，不写入 Git 或任务输出。
 - 每次稳定发布应提供可执行的发布和回滚步骤，标明操作对象、检查项、预计中断和成功判据。回退应能恢复到上一个已知可用版本，不依赖故障时重新下载依赖或重新构建旧版本。
 - 数据回滚与代码回滚须分别评估。涉及状态格式、数据库或配置迁移时，先验证旧版能否读取新版写入的数据；若不能，须有匹配版本的一致性备份、恢复步骤，并说明恢复备份可能丢失的升级后数据。不得直接覆盖正在写入的生产数据。
-- 发布检查覆盖本次改动及登录、会话加载、发送/流式回复、刷新恢复、移动端访问等受影响的核心路径，并检查反向代理和实时连接。首次建立发布机制或修改回滚机制时，在隔离环境验证回滚步骤；失败时停止晋级并按既定方案恢复。
+- 发布检查覆盖本次改动及登录、会话加载、发送/流式回复、刷新恢复、桌面浏览器访问等受影响的核心路径，并检查反向代理和实时连接。首次建立发布机制或修改回滚机制时，在隔离环境验证回滚步骤；失败时停止晋级并按既定方案恢复。
 
 ### 本机现状与操作边界
 
@@ -103,7 +104,7 @@
 - Use Playwright CLI directly when verification needs request interception/route stubbing, synthetic network failures, modifying `localStorage`/session storage, or other page-context mutation that the in-app Browser bridge cannot perform reliably.
 - If falling back from Browser Use, state the exact limitation, keep the same target/viewport, and save screenshots under `output/playwright/`.
 - Playwright scripts should default to CJS: `const { chromium } = require('playwright')`.
-- Playwright sequence: use `127.0.0.1:4173`, verify the server is current, exercise the changed flow, capture light/dark screenshots for UI work, include 375x812 and 768x1024 for responsive/mobile changes, wait 2-3 seconds before final screenshots, and leave `4173` running unless asked to stop.
+- Playwright sequence: use `127.0.0.1:4173`, verify the server is current, exercise the changed flow, capture light/dark screenshots for UI work, use desktop viewports; for mobile-support removal, also confirm narrow viewports keep the desktop layout, wait 2-3 seconds before final screenshots, and leave `4173` running unless asked to stop.
 - Screenshot reports must include tested URL, viewport, assertion/result summary, absolute screenshot path(s), and inline Markdown image(s).
 - If Playwright assertions fail, fix and rerun before reporting completion.
 - For chat parsing/file-link/browse-link changes, TestChat validation is mandatory: send a unique marker with representative markdown/link content, inspect the rendered row, assert `hrefOk`, `titleOk`, and `textOk`, and save `output/playwright/testchat-<feature>-cjs.png`.

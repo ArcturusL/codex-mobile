@@ -10,13 +10,13 @@
 3. Verify `Base branch` control is positioned to the right of runtime mode control.
 4. Switch runtime back to `Local project`.
 5. Verify branch dropdown disappears while runtime control remains aligned.
-6. Resize viewport to mobile width (~375px) and switch back to `New worktree`.
-7. Verify controls stack vertically for mobile readability.
+6. Resize the desktop window to 1024px wide and switch back to `New worktree`.
+7. Verify both controls remain on the same row.
 
 #### Expected Results
 - Desktop: runtime and branch controls are on one row, with branch selector on the right.
 - Local runtime hides the branch selector without breaking layout.
-- Mobile view stacks controls vertically.
+- Resizing the desktop window preserves the runtime and branch control row.
 
 #### Rollback/Cleanup
 - No cleanup required.

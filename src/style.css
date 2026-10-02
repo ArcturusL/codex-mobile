@@ -25,10 +25,6 @@
   @apply bg-zinc-950;
 }
 
-:root.dark .mobile-drawer {
-  @apply bg-zinc-900;
-}
-
 :root.dark .sidebar-root {
   @apply bg-zinc-900;
 }
@@ -327,6 +323,9 @@
   @apply text-zinc-400;
 }
 
+:root.dark .sidebar-settings-panel .composer-dropdown-trigger {
+  @apply border-zinc-600 bg-zinc-800 text-zinc-200;
+}
 
 :root.dark .composer-dropdown-menu {
   @apply border-zinc-600 bg-zinc-800;
@@ -883,10 +882,6 @@
   @apply border-zinc-700 bg-zinc-900;
 }
 
-:root.dark .diff-viewer-mobile-files-button {
-  @apply border-zinc-700 bg-zinc-800 text-zinc-200;
-}
-
 :root.dark .diff-viewer-title {
   @apply text-zinc-100;
 }
@@ -909,18 +904,6 @@
 
 :root.dark .diff-viewer-language {
   @apply bg-zinc-800 text-zinc-300;
-}
-
-:root.dark .diff-viewer-mobile-sheet {
-  @apply border-zinc-700 bg-zinc-900;
-}
-
-:root.dark .diff-viewer-mobile-sheet-handle {
-  @apply bg-zinc-700;
-}
-
-:root.dark .diff-viewer-mobile-sheet-header {
-  @apply border-zinc-700;
 }
 
 :root.dark .diff-viewer-close {
@@ -1077,9 +1060,7 @@
 :root.dark .review-pane-hunk-header,
 :root.dark .review-pane-summary-card,
 :root.dark .review-pane-file-header,
-:root.dark .review-pane-hunk,
-:root.dark .review-pane-sheet-list,
-:root.dark .review-pane-sheet {
+:root.dark .review-pane-hunk {
   @apply bg-zinc-900;
 }
 
@@ -1091,8 +1072,7 @@
 :root.dark .review-pane-empty-title,
 :root.dark .review-pane-file-title,
 :root.dark .review-pane-summary-title,
-:root.dark .review-pane-finding-title,
-:root.dark .review-pane-sheet-title {
+:root.dark .review-pane-finding-title {
   @apply text-zinc-100;
 }
 
@@ -1104,7 +1084,6 @@
 }
 
 :root.dark .review-pane-close,
-:root.dark .review-pane-mobile-files-button,
 :root.dark .review-pane-refresh,
 :root.dark .review-pane-bulk-button,
 :root.dark .review-pane-row-button,
@@ -1152,8 +1131,7 @@
   @apply border-amber-500/35 bg-amber-500/12 text-amber-200 hover:bg-amber-500/20;
 }
 
-:root.dark .review-pane-meta span,
-:root.dark .review-pane-sheet-count {
+:root.dark .review-pane-meta span {
   @apply bg-zinc-800 text-zinc-300;
 }
 
@@ -1271,14 +1249,6 @@
 :root.dark .review-pane-line[data-kind='remove'] .review-pane-line-marker,
 :root.dark .review-pane-line[data-kind='remove'] .review-pane-line-code {
   @apply text-rose-300;
-}
-
-:root.dark .review-pane-sheet-handle {
-  @apply bg-zinc-700;
-}
-
-:root.dark .review-pane-sheet-backdrop {
-  @apply bg-black/55;
 }
 
 :root.dark .worked-reasoning {
@@ -1900,17 +1870,6 @@
   @apply bg-zinc-900 text-zinc-200;
 }
 
-@media (max-width: 768px) {
-  .thread-composer-input,
-  .composer-dropdown-search-input,
-  .search-dropdown-search,
-  .sidebar-search-input,
-  .project-menu-input,
-  .rename-thread-input,
-  .request-input {
-    font-size: 16px !important;
-  }
-}
 
 /* Math also appears in v-html list and plan content, so keep these rules global. */
 .conversation-root .message-math {

@@ -1,4 +1,4 @@
-### Feature: Cloudflare tunnel QR omits password auto-login path
+### Feature: Cloudflare tunnel URL omits password auto-login path
 
 #### Prerequisites
 - App is running from this repository with password enabled.
@@ -7,13 +7,13 @@
 #### Steps
 1. Start CLI and wait for tunnel output.
 2. Verify the printed `Tunnel:` URL does not include a `/password=` suffix.
-3. Scan the terminal QR code from a phone/browser.
+3. Open the printed tunnel URL in a desktop browser.
 4. Confirm first page load shows the password form when no trusted bypass applies.
 5. Use the generated password file path from startup output to retrieve the password and sign in.
 
 #### Expected Results
 - Tunnel URL shown in startup output does not expose the password.
-- QR code encodes the base tunnel URL without a password-bearing path.
+- Startup prints the base tunnel URL; it does not print a phone QR code.
 - The generated password remains available from the local password file.
 - Base tunnel URL requires login when no trusted bypass applies.
 

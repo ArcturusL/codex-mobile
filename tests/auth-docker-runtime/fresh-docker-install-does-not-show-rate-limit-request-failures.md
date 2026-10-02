@@ -1,7 +1,7 @@
-### Fresh Docker mobile install does not show rate-limit request failures
+### Fresh Docker install does not show rate-limit request failures
 
 #### Feature/Change Name
-Fresh unauthenticated install mobile home screen rate-limit handling.
+Fresh unauthenticated install home screen rate-limit handling.
 
 #### Prerequisites/Setup
 1. Docker is available.
@@ -12,17 +12,17 @@ Fresh unauthenticated install mobile home screen rate-limit handling.
 5. The container port is mapped to the host, for example `127.0.0.1:4174 -> 4173`.
 
 #### Steps
-1. Open `http://127.0.0.1:4174/` in a mobile viewport such as iPhone 13 `390x664`.
+1. Open `http://127.0.0.1:4174/` in a desktop viewport such as `1440x900`.
 2. In light theme, wait for the Start new thread home screen to render.
 3. Capture network responses and confirm no `/codex-api/rpc` response fails with `502` for `account/rateLimits/read`.
 4. Confirm the composer renders and the quota UI is simply absent when the fresh `CODEX_HOME` has no authenticated Codex account.
-5. Switch to dark theme and reload the same mobile viewport.
+5. Switch to dark theme and reload the same desktop viewport.
 6. Repeat steps 2 through 4 in dark theme.
 7. Add an `auth.json` containing only `tokens.access_token` and confirm `account/rateLimits/read` is not short-circuited as unauthenticated.
 8. Replace `auth.json` with malformed JSON and confirm the server logs a `[codex-auth] Unable to read Codex auth state` warning while the home screen still renders.
 
 #### Expected Results
-- The fresh mobile home screen renders without a blank page.
+- The fresh home screen renders without a blank page.
 - `account/rateLimits/read` returns an empty result instead of a `502` when no Codex account is authenticated.
 - An access-token-only auth file is treated as authenticated enough to ask Codex for rate limits.
 - Malformed auth files are visible in server logs instead of being silently treated as a normal fresh install.

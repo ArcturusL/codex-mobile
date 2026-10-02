@@ -40,9 +40,9 @@ Thread header Git dropdown replaces the simple review action with a commits/bran
 27. Create an untracked nested file whose parent path is a tracked file in the target commit, or the inverse file/directory case, and confirm checkout/reset moves the conflicting untracked path to `.codex/untracked-backups/` before the Git operation.
 28. Force a checkout/reset failure after an untracked backup move, such as by making the target branch unavailable in a disposable repository, and confirm the moved untracked file is restored to its original path.
 29. Open a commit file in the Review pane, navigate to a different thread or repository cwd, and confirm the commit-scoped file/sha state clears and the pane closes instead of showing the old commit against the new repo.
-30. At a mobile viewport around 375px wide, select a commit and confirm the dropdown fits inside the viewport with branches first, commits second, and selected-commit files last, stacked vertically instead of squeezed into columns.
+30. At a desktop viewport of 1440x900, select a commit and confirm the dropdown presents branches, commits, and selected-commit files in adjacent columns.
 31. Narrow the Review pane file list and confirm changed-file rows do not inherit folder-depth indentation, long names truncate on one line instead of wrapping vertically, and the `+`/`-` counts remain visible.
-32. At a mobile viewport around 375px wide, open the Review pane, scroll the diff content vertically, and confirm the `X` close button remains visible and tappable in the top-right corner.
+32. Open the Review pane at 1440x900, scroll the diff content vertically, and confirm the `X` close button remains visible and clickable in the top-right corner.
 33. Switch to dark theme and repeat steps 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15, 16, 17, 18, 21, 23, 24, 25, 26, 27, 28, 29, 30, 31, and 32.
 
 #### Preserved Prior Coverage
@@ -92,10 +92,10 @@ Thread header Git dropdown replaces the simple review action with a commits/bran
 - If checkout/reset fails after moving untracked files into `.codex/untracked-backups/`, those files are restored to their original paths.
 - Commit-scoped Review pane state is cleared when navigating to another thread or repository cwd.
 - The selected branch HEAD commit is marked `current` in the commit list.
-- The mobile Review pane keeps its close button visible above the app chrome in both light theme and dark theme.
-- The mobile Review pane diff area scrolls vertically without moving or hiding the pane header.
-- The Review pane overlay, toolbar, file list, file sheet, and diff surfaces use dark backgrounds and borders in dark theme instead of showing light surfaces.
-- On mobile, branches, commits, and selected-commit file details stack vertically in that order and stay inside the viewport in both light theme and dark theme.
+- The Review pane keeps its close button visible above the app chrome in both light theme and dark theme.
+- The Review pane diff area scrolls vertically without moving or hiding the pane header.
+- The Review pane overlay, toolbar, file list, and diff surfaces use dark backgrounds and borders in dark theme instead of showing light surfaces.
+- Branches, commits, and selected-commit file details use the desktop column layout in both light theme and dark theme.
 - Loading and error messages remain visible in the dropdown without using browser alerts.
 - Dropdown surfaces, text, badges, and errors are readable in both light theme and dark theme.
 

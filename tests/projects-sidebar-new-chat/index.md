@@ -8,7 +8,7 @@ Return to the [manual test index](../../tests.md).
 
 | Section |
 | --- |
-| [Feature: Project recency sort, pins, and mobile move mode](project-recency-sort-pins-and-mobile-move-mode.md) |
+| [Historical coverage: Project recency sort, pins, and move mode (reverted)](project-recency-sort-pins-and-mobile-move-mode.md) |
 | [Feature: Projectless new chat folders](projectless-new-chat-folders.md) |
 | [Feature: Unified create project and GitHub clone modal](unified-create-project-and-github-clone-modal.md) |
 | [Feature: Project menu Export Project ZIP share](project-menu-save-project-zip.md) |

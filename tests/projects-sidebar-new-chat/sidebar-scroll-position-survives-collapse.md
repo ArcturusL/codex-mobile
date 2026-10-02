@@ -19,7 +19,7 @@ Sidebar scroll position is restored after closing and reopening the sidebar.
 ## Expected Results
 - Closing and reopening the sidebar restores the previous vertical scroll offset.
 - The remembered scroll position remains stable while the sidebar content is remounted.
-- Mobile drawer restore retries after reopen until the full list height is available, so transition/teleport timing does not leave the sidebar at the top or a partial intermediate offset.
+- The desktop sidebar restores its scroll position after reopening once the full list height is available.
 - Scroll events emitted after collapse do not overwrite the saved offset.
 - Light and dark theme sidebar rows remain readable after restore.
 

@@ -425,7 +425,7 @@ watch(visibleSkillErrors, (values, oldValues) => {
 @reference "tailwindcss";
 
 .skills-hub {
-  @apply flex flex-col gap-3 sm:gap-4 p-3 sm:p-6 max-w-4xl mx-auto w-full overflow-y-auto h-full;
+  @apply flex flex-col gap-4 p-6 max-w-4xl mx-auto w-full overflow-y-auto h-full;
 }
 
 .skills-hub-header {
@@ -433,7 +433,7 @@ watch(visibleSkillErrors, (values, oldValues) => {
 }
 
 .skills-hub-title {
-  @apply text-xl sm:text-2xl font-semibold text-zinc-900 m-0;
+  @apply text-2xl font-semibold text-zinc-900 m-0;
 }
 
 .skills-hub-subtitle {
@@ -481,7 +481,7 @@ watch(visibleSkillErrors, (values, oldValues) => {
 }
 
 .skills-search-header {
-  @apply flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between;
+  @apply flex flex-row gap-2 items-start justify-between;
 }
 
 .skills-search-copy {
@@ -497,7 +497,7 @@ watch(visibleSkillErrors, (values, oldValues) => {
 }
 
 .skills-search-form {
-  @apply flex flex-col gap-2 sm:flex-row;
+  @apply flex flex-row gap-2;
 }
 
 .skills-search-input {
@@ -537,7 +537,7 @@ watch(visibleSkillErrors, (values, oldValues) => {
 }
 
 .skills-hub-grid {
-  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3;
+  @apply grid grid-cols-2 lg:grid-cols-3 gap-3;
 }
 
 .skills-hub-loading {

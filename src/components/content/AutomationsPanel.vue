@@ -344,7 +344,7 @@ function getPathLeaf(path: string): string {
 @reference "tailwindcss";
 
 .automations-panel {
-  @apply flex min-h-0 flex-1 flex-col gap-3 px-2 pb-3 sm:px-6 sm:pb-6;
+  @apply flex min-h-0 flex-1 flex-col gap-3 px-6 pb-6;
 }
 
 .automations-toolbar {
@@ -373,7 +373,7 @@ function getPathLeaf(path: string): string {
 }
 
 .automations-layout {
-  @apply grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)];
+  @apply grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(320px,420px)] gap-3;
 }
 
 .automations-list {
@@ -461,7 +461,7 @@ function getPathLeaf(path: string): string {
 }
 
 .automation-detail-grid {
-  @apply grid grid-cols-1 gap-2 sm:grid-cols-2;
+  @apply grid grid-cols-2 gap-2;
 }
 
 .automation-detail-grid div {

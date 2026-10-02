@@ -31,9 +31,6 @@
     <div
       ref="terminalHostRef"
       class="thread-terminal-host"
-      @pointerdown="emit('terminalFocusChange', true)"
-      @focusin="emit('terminalFocusChange', true)"
-      @focusout="onTerminalFocusOut"
     />
   </section>
 </template>
@@ -66,7 +63,6 @@ type ThreadTerminalPanelExposed = {
 
 const emit = defineEmits<{
   hide: []
-  terminalFocusChange: [focused: boolean]
 }>()
 
 const terminalHostRef = ref<HTMLElement | null>(null)
@@ -280,14 +276,6 @@ function handleNotification(notification: RpcNotification): void {
 
 function onNewTerminal(): void {
   void attachToThread(true)
-}
-
-function onTerminalFocusOut(): void {
-  window.setTimeout(() => {
-    const activeElement = document.activeElement
-    if (activeElement instanceof Node && terminalHostRef.value?.contains(activeElement)) return
-    emit('terminalFocusChange', false)
-  }, 100)
 }
 
 function onSelectTab(tabId: string): void {
@@ -667,23 +655,4 @@ function readString(value: unknown): string {
   @apply bg-black;
 }
 
-@media (max-width: 767px) {
-  .thread-terminal-panel {
-    height: min(28vh, 14rem);
-    min-height: 9rem;
-  }
-
-  .thread-terminal-header {
-    @apply px-1.5;
-  }
-
-  .thread-terminal-action {
-    @apply px-1.5 text-[11px];
-  }
-
-  .thread-terminal-host {
-    @apply px-1.5 py-1.5;
-  }
-
-}
 </style>

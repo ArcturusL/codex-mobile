@@ -703,45 +703,4 @@ onBeforeUnmount(() => window.removeEventListener('pointerdown', onDocumentPointe
   @apply text-red-700;
 }
 
-@media (max-width: 640px) {
-  .header-git-menu-wrap {
-    @apply left-2 right-2 top-[4.5rem];
-  }
-
-  .header-git-menu,
-  .header-git-menu.has-commit-files {
-    @apply w-auto max-w-none overflow-y-auto;
-    max-height: calc(100vh - 5.25rem);
-  }
-
-  .header-git-review-row {
-    @apply px-3 py-2.5;
-  }
-
-  .header-git-columns {
-    @apply min-h-0 grid-cols-1;
-  }
-
-  .header-git-columns.has-commit-files {
-    @apply grid-cols-1;
-  }
-
-  .header-git-branch-panel {
-    @apply order-1;
-  }
-
-  .header-git-commit-panel {
-    @apply order-2;
-  }
-
-  .header-git-commit-detail-panel {
-    @apply order-3;
-  }
-
-  .header-git-commit-list,
-  .header-git-branches,
-  .header-git-file-list {
-    @apply max-h-48;
-  }
-}
 </style>

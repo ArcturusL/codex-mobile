@@ -14,7 +14,7 @@ CLI startup output no longer prints the configured password or embeds it in the 
 4. Confirm startup output does not include `Password:` or `TEST_SECRET_SHOULD_NOT_PRINT`.
 5. Start the CLI without an explicit password and confirm startup output prints `Generated password file:` with a path under `$CODEX_HOME`.
 6. Confirm the generated password file exists, is readable by the current user, and has `0600` permissions.
-7. If tunnel testing is available, start with tunnel enabled and confirm the printed tunnel URL and QR code do not include `/password=`.
+7. If tunnel testing is available, start with tunnel enabled and confirm the printed tunnel URL does not include `/password=`.
 
 #### Expected Results
 - Password-protected startup still works.

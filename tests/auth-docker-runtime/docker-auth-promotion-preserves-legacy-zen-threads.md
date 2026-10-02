@@ -11,7 +11,7 @@ Legacy OpenCode Zen threads remain readable and provider-locked, while new threa
 5. Keep a valid host `auth.json` available to copy into `/codex-home/auth.json`.
 
 #### Steps
-1. In light theme, open the no-auth container URL at a mobile viewport.
+1. In light theme, open the no-auth container URL at a desktop viewport such as `1440x900`.
 2. Send `hi` and wait for an assistant reply from the default OpenCode Zen fallback.
 3. Confirm the composer model is `big-pickle`.
 4. Copy valid Codex auth into the same container and restart the container.

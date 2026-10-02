@@ -1,19 +1,11 @@
 <template>
-  <section class="review-pane" :class="{ 'is-mobile': isMobile }" @pointerdown.stop @click.stop>
+  <section class="review-pane" @pointerdown.stop @click.stop>
     <header class="review-pane-header">
       <div class="review-pane-heading">
         <p class="review-pane-eyebrow">{{ t('Review') }}</p>
         <p class="review-pane-title">{{ headerTitle }}</p>
       </div>
       <div class="review-pane-header-actions">
-        <button
-          v-if="isMobile && snapshot?.files.length"
-          type="button"
-          class="review-pane-mobile-files-button"
-          @click="isFileSheetOpen = true"
-        >
-          {{ t('Files') }}
-        </button>
         <button type="button" class="review-pane-close" :aria-label="t('Close review pane')" @click="$emit('close')">
           <IconTablerX class="icon-svg" />
         </button>
@@ -146,7 +138,7 @@
         </div>
 
         <div v-else class="review-pane-main" :style="reviewMainStyle">
-          <aside v-if="!isMobile" class="review-pane-file-list">
+          <aside class="review-pane-file-list">
             <template v-for="node in visibleFileTreeNodes" :key="node.treeKey">
               <button
                 v-if="node.kind === 'folder'"
@@ -165,7 +157,6 @@
                 v-else
                 type="button"
                 class="review-pane-file review-pane-tree-file"
-                :style="treeFileIndentStyle()"
                 :data-active="selectedFile?.id === node.file.id"
                 :title="node.file.path"
                 @click="selectFile(node.file.id)"
@@ -187,7 +178,6 @@
           </aside>
 
           <div
-            v-if="!isMobile"
             class="review-pane-resizer"
             role="separator"
             aria-orientation="vertical"
@@ -272,61 +262,6 @@
         </div>
       </template>
     </div>
-
-    <Transition name="review-pane-sheet">
-      <div
-        v-if="isMobile && isFileSheetOpen && snapshot?.files.length"
-        class="review-pane-sheet-backdrop"
-        @click="isFileSheetOpen = false"
-      >
-        <div class="review-pane-sheet" @click.stop>
-          <div class="review-pane-sheet-handle" aria-hidden="true"></div>
-          <div class="review-pane-sheet-header">
-            <p class="review-pane-sheet-title">Changed files</p>
-            <p class="review-pane-sheet-count">{{ snapshot.files.length }}</p>
-          </div>
-          <div class="review-pane-sheet-list">
-            <template v-for="node in visibleFileTreeNodes" :key="`sheet:${node.treeKey}`">
-              <button
-                v-if="node.kind === 'folder'"
-                type="button"
-                class="review-pane-tree-folder review-pane-tree-folder-sheet"
-                :style="treeIndentStyle(node.depth)"
-                :data-expanded="isFolderExpanded(node.id)"
-                @click="toggleFolder(node.id)"
-              >
-                <span class="review-pane-tree-caret" :data-expanded="isFolderExpanded(node.id)"></span>
-                <span class="review-pane-tree-folder-name">{{ node.name }}</span>
-                <span class="review-pane-tree-folder-count">{{ node.fileCount }}</span>
-              </button>
-
-              <button
-                v-else
-                type="button"
-                class="review-pane-file review-pane-tree-file"
-                :style="treeFileIndentStyle()"
-                :data-active="selectedFile?.id === node.file.id"
-                :title="node.file.path"
-                @click="selectFile(node.file.id)"
-              >
-                <span class="review-pane-file-meta-row">
-                  <span class="review-pane-file-path">
-                    {{ node.name }}
-                    <template v-if="node.file.previousPath"> ← {{ fileBaseName(node.file.previousPath) }}</template>
-                  </span>
-                  <span class="review-pane-file-delta">
-                    <span class="review-pane-delta-add">+{{ node.file.addedLineCount }}</span>
-                    <span class="review-pane-delta-separator">/</span>
-                    <span class="review-pane-delta-remove">-{{ node.file.removedLineCount }}</span>
-                  </span>
-                </span>
-                <span class="review-pane-file-op" :data-operation="node.file.operation">{{ formatOperation(node.file.operation) }}</span>
-              </button>
-            </template>
-          </div>
-        </div>
-      </div>
-    </Transition>
   </section>
 </template>
 
@@ -339,7 +274,6 @@ import {
   subscribeCodexNotifications,
   type RpcNotification,
 } from '../../api/codexGateway'
-import { useMobile } from '../../composables/useMobile'
 import { useUiLanguage } from '../../composables/useUiLanguage'
 import type {
   UiReviewAction,
@@ -364,7 +298,6 @@ defineEmits<{
   close: []
 }>()
 
-const { isMobile } = useMobile()
 const { t } = useUiLanguage()
 
 const activeScope = ref<UiReviewScope>('workspace')
@@ -374,7 +307,6 @@ const selectedBaseBranch = ref('')
 const isSyncingBaseBranch = ref(false)
 const selectedFileId = ref('')
 const selectedHunkId = ref('')
-const isFileSheetOpen = ref(false)
 const isLoadingSnapshot = ref(false)
 const isApplyingAction = ref(false)
 const isInitializingGit = ref(false)
@@ -519,13 +451,9 @@ const MAX_FILE_LIST_WIDTH = 420
 const DEFAULT_FILE_LIST_WIDTH = 288
 const fileListWidth = ref(loadFileListWidth())
 
-const reviewMainStyle = computed<Record<string, string>>(() => {
-  const style: Record<string, string> = {}
-  if (!isMobile.value) {
-    style['--review-file-list-width'] = `${fileListWidth.value}px`
-  }
-  return style
-})
+const reviewMainStyle = computed(() => ({
+  '--review-file-list-width': `${fileListWidth.value}px`,
+}))
 
 const fileTreeData = computed(() => buildVisibleFileTree(snapshot.value?.files ?? [], folderExpansionState.value))
 const visibleFileTreeNodes = computed(() => fileTreeData.value.nodes)
@@ -549,7 +477,6 @@ function persistFileListWidth(value: number): void {
 }
 
 function onResizerPointerDown(event: PointerEvent): void {
-  if (isMobile.value) return
   event.preventDefault()
   stopResizeTracking?.()
   const startX = event.clientX
@@ -706,16 +633,8 @@ function expandFileAncestors(fileId: string): void {
 }
 
 function treeIndentStyle(depth: number): Record<string, string> {
-  const base = isMobile.value ? 8 : 10
-  const step = isMobile.value ? 12 : 14
   return {
-    paddingLeft: `${base + (depth * step)}px`,
-  }
-}
-
-function treeFileIndentStyle(): Record<string, string> {
-  return {
-    paddingLeft: isMobile.value ? '8px' : '10px',
+    paddingLeft: `${10 + (depth * 14)}px`,
   }
 }
 
@@ -781,9 +700,6 @@ function selectFile(fileId: string): void {
   selectedFileId.value = fileId
   const file = snapshot.value?.files.find((entry) => entry.id === fileId) ?? null
   selectedHunkId.value = file?.hunks[0]?.id ?? ''
-  if (isMobile.value) {
-    isFileSheetOpen.value = false
-  }
 }
 
 function shortCommitSha(value: string): string {
@@ -932,10 +848,6 @@ onBeforeUnmount(() => {
   @apply fixed inset-3 z-[1200] flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl;
 }
 
-.review-pane.is-mobile {
-  @apply inset-0 rounded-none border-0;
-}
-
 .review-pane-header {
   @apply flex items-start justify-between gap-3 border-b border-zinc-200 px-3 py-2.5;
 }
@@ -957,7 +869,6 @@ onBeforeUnmount(() => {
 }
 
 .review-pane-close,
-.review-pane-mobile-files-button,
 .review-pane-refresh,
 .review-pane-bulk-button,
 .review-pane-row-button,
@@ -970,15 +881,15 @@ onBeforeUnmount(() => {
 }
 
 .review-pane-toolbar {
-  @apply flex flex-col gap-2 border-b border-zinc-100 px-3 py-2.5;
+  @apply flex flex-row items-center gap-2.5 border-b border-zinc-100 px-3 py-2.5;
 }
 
 .review-pane-toolbar-controls {
-  @apply flex flex-wrap items-center gap-2;
+  @apply flex min-w-0 flex-nowrap items-center gap-2;
 }
 
 .review-pane-control-cluster {
-  @apply flex min-w-0 items-center gap-1.5;
+  @apply shrink-0 flex min-w-0 items-center gap-1.5;
 }
 
 .review-pane-control-label {
@@ -1023,7 +934,7 @@ onBeforeUnmount(() => {
 }
 
 .review-pane-toolbar-actions {
-  @apply flex shrink-0 items-center gap-1.5;
+  @apply ml-auto flex shrink-0 items-center gap-1.5;
 }
 
 .review-pane-refresh {
@@ -1067,7 +978,7 @@ onBeforeUnmount(() => {
 }
 
 .review-pane-file-list {
-  @apply hidden min-w-0 overflow-y-auto border-r border-zinc-100 bg-zinc-50/60 p-2 md:flex md:flex-col md:gap-1.5;
+  @apply flex min-w-0 flex-col gap-1.5 overflow-y-auto border-r border-zinc-100 bg-zinc-50/60 p-2;
   container-type: inline-size;
 }
 
@@ -1077,10 +988,6 @@ onBeforeUnmount(() => {
 
 .review-pane-tree-folder[data-expanded='false'] {
   @apply text-zinc-500;
-}
-
-.review-pane-tree-folder-sheet {
-  @apply rounded-md bg-zinc-50/80;
 }
 
 .review-pane-tree-caret {
@@ -1106,7 +1013,7 @@ onBeforeUnmount(() => {
 }
 
 .review-pane-resizer {
-  @apply relative hidden cursor-col-resize bg-zinc-100 md:block;
+  @apply relative block cursor-col-resize bg-zinc-100;
 }
 
 .review-pane-resizer::before {
@@ -1123,7 +1030,7 @@ onBeforeUnmount(() => {
 }
 
 .review-pane-tree-file {
-  @apply rounded-lg px-2 py-1.75;
+  @apply rounded-lg pl-2.5 pr-2 py-1.75;
 }
 
 .review-pane-file-meta-row {
@@ -1300,228 +1207,4 @@ onBeforeUnmount(() => {
   @apply mt-4 border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700;
 }
 
-.review-pane-sheet-backdrop {
-  @apply fixed inset-0 z-50 bg-black/30;
-}
-
-.review-pane-sheet {
-  @apply absolute inset-x-0 bottom-0 rounded-t-3xl bg-white px-4 pb-6 pt-3 shadow-2xl;
-}
-
-.review-pane-sheet-handle {
-  @apply mx-auto mb-3 h-1.5 w-12 rounded-full bg-zinc-300;
-}
-
-.review-pane-sheet-header {
-  @apply mb-3 flex items-center justify-between;
-}
-
-.review-pane-sheet-title {
-  @apply m-0 text-sm font-medium text-zinc-900;
-}
-
-.review-pane-sheet-count {
-  @apply m-0 rounded-full bg-zinc-100 px-2 py-1 text-[11px] text-zinc-500;
-}
-
-.review-pane-sheet-list {
-  @apply flex max-h-[60vh] flex-col gap-2 overflow-y-auto pb-3;
-}
-
-.review-pane-sheet-enter-active,
-.review-pane-sheet-leave-active {
-  transition: opacity 160ms ease;
-}
-
-.review-pane-sheet-enter-active .review-pane-sheet,
-.review-pane-sheet-leave-active .review-pane-sheet {
-  transition: transform 200ms ease;
-}
-
-.review-pane-sheet-enter-from,
-.review-pane-sheet-leave-to {
-  opacity: 0;
-}
-
-.review-pane-sheet-enter-from .review-pane-sheet,
-.review-pane-sheet-leave-to .review-pane-sheet {
-  transform: translateY(16px);
-}
-
-@media (max-width: 767px) {
-  .review-pane-header {
-    @apply px-3 py-2;
-  }
-
-  .review-pane-eyebrow {
-    @apply text-[10px];
-  }
-
-  .review-pane-title {
-    @apply text-xs leading-5;
-  }
-
-  .review-pane-header-actions {
-    @apply gap-1.5;
-  }
-
-  .review-pane-close,
-  .review-pane-mobile-files-button,
-  .review-pane-refresh {
-    @apply px-2.5 py-1 text-[12px];
-  }
-
-  .review-pane-close {
-    @apply h-7 w-7;
-  }
-
-  .review-pane-toolbar {
-    @apply gap-1.5 px-3 py-2;
-  }
-
-  .review-pane-toolbar-controls {
-    @apply grid grid-cols-1 gap-1.5;
-  }
-
-  .review-pane-control-cluster {
-    @apply gap-1;
-  }
-
-  .review-pane-control-label {
-    @apply text-[9px];
-  }
-
-  .review-pane-branch-dropdown {
-    @apply min-w-0 flex-1;
-  }
-
-  .review-pane-branch-dropdown :deep(.composer-dropdown-trigger) {
-    @apply px-2 py-0.75 text-[12px];
-  }
-
-  .review-pane-segmented {
-    @apply w-full justify-between gap-1 p-0.75;
-  }
-
-  .review-pane-segmented-button {
-    @apply flex-1 px-2 py-1 text-[12px];
-  }
-
-  .review-pane-toolbar-actions {
-    @apply w-auto gap-1;
-  }
-
-  .review-pane-refresh {
-    @apply px-2.5 py-1 text-[12px];
-  }
-
-  .review-pane-banner {
-    @apply mx-3 mt-2 px-2.5 py-1.5 text-xs;
-  }
-
-  .review-pane-meta {
-    @apply gap-1 px-3 pt-2;
-  }
-
-  .review-pane-meta span {
-    @apply px-1.75 py-0.75 text-[11px];
-  }
-
-  .review-pane-bulk-actions {
-    @apply gap-1 px-3 py-2;
-  }
-
-  .review-pane-bulk-button {
-    @apply px-2.5 py-1 text-[12px];
-  }
-
-  .review-pane-main {
-    @apply flex h-full min-h-0 flex-col;
-  }
-
-  .review-pane-resizer {
-    @apply hidden;
-  }
-
-  .review-pane-diff {
-    @apply min-h-0 flex-1 overflow-y-auto px-2 py-2.5;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
-  }
-
-  .review-pane-file-header,
-  .review-pane-hunk-header {
-    @apply px-2.5 py-2;
-  }
-
-  .review-pane-sheet {
-    @apply px-3 pb-4 pt-2.5;
-  }
-
-  .review-pane-sheet-handle {
-    @apply mb-2 h-1.25 w-11;
-  }
-
-  .review-pane-sheet-header {
-    @apply mb-2;
-  }
-
-  .review-pane-sheet-title {
-    @apply text-xs;
-  }
-
-  .review-pane-sheet-count {
-    @apply px-1.5 py-0.75 text-[10px];
-  }
-
-  .review-pane-sheet-list {
-    @apply gap-1.5 pb-2;
-  }
-
-  .review-pane-sheet-list .review-pane-tree-folder {
-    @apply gap-1 rounded-md px-2 py-1 text-[12px];
-  }
-
-  .review-pane-sheet-list .review-pane-tree-folder-count {
-    @apply px-1.25 py-0.25 text-[9px];
-  }
-
-  .review-pane-sheet-list .review-pane-file {
-    @apply gap-0.5 rounded-lg px-2 py-1.5;
-  }
-
-  .review-pane-sheet-list .review-pane-file-meta-row {
-    @apply gap-1.5;
-  }
-
-  .review-pane-sheet-list .review-pane-file-op {
-    @apply px-1.5 py-0.25 text-[9px];
-  }
-
-  .review-pane-sheet-list .review-pane-file-path {
-    @apply text-[13px] leading-5;
-  }
-
-  .review-pane-sheet-list .review-pane-file-delta {
-    @apply text-[11px];
-  }
-}
-
-@media (min-width: 768px) {
-  .review-pane-toolbar {
-    @apply flex-row items-center gap-2.5;
-  }
-
-  .review-pane-toolbar-controls {
-    @apply min-w-0 flex-nowrap;
-  }
-
-  .review-pane-control-cluster {
-    @apply shrink-0;
-  }
-
-  .review-pane-toolbar-actions {
-    @apply ml-auto;
-  }
-}
 </style>
