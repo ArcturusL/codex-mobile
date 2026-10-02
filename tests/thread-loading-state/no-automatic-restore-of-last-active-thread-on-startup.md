@@ -9,11 +9,9 @@
 1. Open the app in a regular browser tab (`http://localhost:<port>/`), select any thread, then navigate back to home route (`#/`).
 2. Refresh the browser tab.
 3. Confirm the app remains on home route and does not auto-switch to `#/thread/:threadId`.
-4. Install/open the app in PWA standalone mode, select any thread, navigate to `#/`, and relaunch the PWA.
 
 #### Expected Results
 - In regular browser-tab mode, startup does not restore and redirect to the last active thread.
-- In PWA standalone mode, startup also does not restore and redirect to the last active thread.
 - Existing `openProjectPath` startup behavior still opens the requested project on home.
 
 #### Rollback/Cleanup

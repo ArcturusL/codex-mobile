@@ -323,6 +323,10 @@
   @apply text-zinc-400;
 }
 
+:root.dark .sidebar-settings-panel .composer-dropdown-trigger {
+  @apply border-zinc-600 bg-zinc-800 text-zinc-200;
+}
+
 :root.dark .composer-dropdown-menu {
   @apply border-zinc-600 bg-zinc-800;
 }

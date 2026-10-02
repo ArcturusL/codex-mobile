@@ -44,8 +44,6 @@ The integrated terminal feature adds a Codex.app-style xterm panel to local/work
 
 ## UI Lessons
 - Keep the terminal outside the pending-request/composer `v-if`/`v-else` pair. If the terminal is inserted between them, Vue pairs `v-else` with the terminal instead of the pending request and hides the composer while the terminal is open.
-- On mobile, sidebar collapse should run immediately on first render. Otherwise screenshot or direct-route loads can leave the drawer covering the terminal.
-- Keep mobile terminal height constrained so both terminal and composer remain visible.
 
 ## Verification
 - Unit coverage lives in `src/server/terminalManager.test.ts`.

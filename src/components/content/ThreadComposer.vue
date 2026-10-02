@@ -179,14 +179,6 @@
             >
               {{ t('Add folder') }}
             </button>
-            <button
-              class="thread-composer-attach-item"
-              type="button"
-              :disabled="isInteractionDisabled"
-              @click="triggerCameraCapture"
-            >
-              {{ t('Take photo') }}
-            </button>
             <div class="thread-composer-attach-separator" />
             <div class="thread-composer-attach-mode">
               <span class="thread-composer-attach-mode-label">{{ t('In-progress send') }}</span>
@@ -366,15 +358,6 @@
       multiple
       :disabled="isInteractionDisabled"
       @change="onPhotoLibraryChange"
-    />
-    <input
-      ref="cameraCaptureInputRef"
-      class="thread-composer-hidden-input"
-      type="file"
-      accept="image/*"
-      capture="environment"
-      :disabled="isInteractionDisabled"
-      @change="onCameraCaptureChange"
     />
     <input
       ref="folderPickerInputRef"
@@ -561,7 +544,6 @@ const {
 })
 const attachMenuRootRef = ref<HTMLElement | null>(null)
 const photoLibraryInputRef = ref<HTMLInputElement | null>(null)
-const cameraCaptureInputRef = ref<HTMLInputElement | null>(null)
 const folderPickerInputRef = ref<HTMLInputElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const isAttachMenuOpen = ref(false)
@@ -1182,10 +1164,6 @@ function triggerPhotoLibrary(): void {
   photoLibraryInputRef.value?.click()
 }
 
-function triggerCameraCapture(): void {
-  cameraCaptureInputRef.value?.click()
-}
-
 function triggerFolderPicker(): void {
   folderPickerInputRef.value?.click()
 }
@@ -1453,13 +1431,6 @@ function clearInputValue(inputRefEl: HTMLInputElement | null): void {
 }
 
 function onPhotoLibraryChange(event: Event): void {
-  const input = event.target as HTMLInputElement | null
-  attachIncomingFiles(input?.files ?? null)
-  clearInputValue(input)
-  isAttachMenuOpen.value = false
-}
-
-function onCameraCaptureChange(event: Event): void {
   const input = event.target as HTMLInputElement | null
   attachIncomingFiles(input?.files ?? null)
   clearInputValue(input)

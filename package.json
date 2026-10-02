@@ -1,7 +1,7 @@
 {
   "name": "codexapp",
   "version": "0.1.87",
-  "description": "A lightweight web interface for Codex that runs on top of the Codex app-server, allowing remote access from any browser",
+  "description": "A lightweight web interface for Codex that runs on top of the Codex app-server, allowing remote access from desktop browsers",
   "type": "module",
   "license": "MIT",
   "author": "Pavel Voronin, Igor Levochkin",
@@ -67,7 +67,6 @@
     "express": "^5.1.0",
     "firebase": "^12.2.1",
     "highlight.js": "^11.11.1",
-    "qrcode-terminal": "^0.12.0",
     "ws": "^8.18.3"
   },
   "optionalDependencies": {
@@ -78,7 +77,6 @@
     "@tailwindcss/vite": "^4.1.18",
     "@types/express": "^5.0.0",
     "@types/node": "^22.13.2",
-    "@types/qrcode-terminal": "^0.12.2",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^5.2.1",
     "playwright": "^1.59.1",

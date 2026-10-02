@@ -990,10 +990,6 @@ onBeforeUnmount(() => {
   @apply text-zinc-500;
 }
 
-.review-pane-tree-folder-sheet {
-  @apply rounded-md bg-zinc-50/80;
-}
-
 .review-pane-tree-caret {
   @apply relative h-3.5 w-3.5 shrink-0;
 }
