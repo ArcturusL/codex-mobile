@@ -21,7 +21,7 @@
 
 #### Expected Results
 - Each thread restores its own last selected model when you switch threads.
-- The new-thread screen keeps its own draft model selection instead of inheriting the last opened thread.
+- The new-thread screen inherits the most recent manual model choice for the active provider. Merely opening another thread does not change that default.
 - After browser refresh, reopening a thread restores the model persisted for that thread.
 - Forked or newly created threads keep the resolved model returned by Codex, including fallback to the supported default model when needed.
 - Forking a nonselected thread from the sidebar uses that source thread’s persisted model.
@@ -30,3 +30,25 @@
 
 #### Rollback/Cleanup
 - Reset each tested thread back to its original model selection if you changed an existing conversation for the test.
+
+
+### Feature: Remember composer choices
+
+#### Prerequisites
+- Use the same browser and origin with local storage enabled; record the original picker values.
+
+#### Steps
+1. In an existing thread choose a different model, High thinking, and Read only access without sending a message.
+2. Immediately refresh, reopen that thread, and check all three pickers.
+3. Open a new chat and check the same selections after model metadata loads.
+4. Change thinking to Default, refresh, and check it remains Default.
+5. Switch between existing threads with different saved permissions and models.
+6. Repeat the refresh check in light and dark themes.
+
+#### Expected Results
+- All three choices survive refresh; a server default does not overwrite explicit thinking or an available saved model.
+- New chats inherit the last manual model for their provider and the last access choice. Existing threads retain their own permission/model choices.
+- Picking options sends no turn or configuration RPC; persistence uses local storage only.
+
+#### Rollback/Cleanup
+- Restore the original picker values. Browser site-data removal clears remembered choices.
