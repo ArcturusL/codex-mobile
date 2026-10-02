@@ -78,6 +78,7 @@ const THREAD_TOKEN_USAGE_STORAGE_KEY = 'codex-web-local.thread-token-usage.v1'
 const THREAD_TERMINAL_OPEN_STORAGE_KEY = 'codex-web-local.thread-terminal-open.v1'
 const SELECTED_THREAD_STORAGE_KEY = 'codex-web-local.selected-thread-id.v1'
 const SELECTED_MODEL_BY_CONTEXT_STORAGE_KEY = 'codex-web-local.selected-model-by-context.v1'
+const REASONING_EFFORT_STORAGE_KEY = 'codex-web-local.reasoning-effort.v1'
 const LEGACY_SELECTED_MODEL_STORAGE_KEY = 'codex-web-local.selected-model-id.v1'
 const PROJECT_ORDER_STORAGE_KEY = 'codex-web-local.project-order.v1'
 const PROJECT_DISPLAY_NAME_STORAGE_KEY = 'codex-web-local.project-display-name.v1'
@@ -1448,12 +1449,19 @@ export function useDesktopState() {
   function setSelectedPermissionMode(value: string): void {
     const mode = normalizePermissionMode(value)
     if (!mode) return
-    permissionModes.value = { ...permissionModes.value, [selectedThreadId.value || NEW_THREAD_COLLABORATION_MODE_CONTEXT]: mode }
+    permissionModes.value = { ...permissionModes.value, [NEW_THREAD_COLLABORATION_MODE_CONTEXT]: mode, [selectedThreadId.value || NEW_THREAD_COLLABORATION_MODE_CONTEXT]: mode }
   }
   watch(permissionModes, (value) => {
     try { window.localStorage.setItem('composer-permission-modes', JSON.stringify(value)) } catch { /* Keep the in-memory selection. */ }
-  })
-  const selectedReasoningEffort = ref<ReasoningEffort | ''>('medium')
+  }, { flush: 'sync' })
+  let rememberedReasoningEffort: ReasoningEffort | '' | undefined
+  try {
+    const stored = window.localStorage.getItem(REASONING_EFFORT_STORAGE_KEY)
+    if (stored === '' || REASONING_EFFORT_OPTIONS.includes(stored as ReasoningEffort)) {
+      rememberedReasoningEffort = stored as ReasoningEffort | ''
+    }
+  } catch { /* Use the server default when storage is unavailable. */ }
+  const selectedReasoningEffort = ref<ReasoningEffort | ''>(rememberedReasoningEffort ?? 'medium')
   const selectedSpeedMode = ref<SpeedMode>('standard')
   const activeProviderId = ref('')
   const codexCliMissingError = ref('')
@@ -1707,7 +1715,7 @@ export function useDesktopState() {
     shouldAutoScrollOnNextAgentEvent = false
   }
 
-  function setSelectedModelIdForThread(threadId: string, modelId: string): void {
+  function setSelectedModelIdForThread(threadId: string, modelId: string, remember = true): void {
     const normalizedModelId = modelId.trim()
     const contextId = toThreadContextId(threadId)
     const normalizedProviderId = normalizeProviderContextId(activeProviderId.value)
@@ -1719,6 +1727,10 @@ export function useDesktopState() {
     if (normalizedModelId) {
       const nextModelMap = cloneStringKeyedRecord(selectedModelIdByContext.value)
       nextModelMap[selectedContextId] = normalizedModelId
+      if (remember && contextId !== NEW_THREAD_COLLABORATION_MODE_CONTEXT) {
+        const defaultContextId = toProviderModelContextId(readProviderIdForThread(threadId))
+        nextModelMap[defaultContextId || NEW_THREAD_COLLABORATION_MODE_CONTEXT] = normalizedModelId
+      }
       if (providerContextId) {
         delete nextModelMap[contextId]
       }
@@ -1740,7 +1752,7 @@ export function useDesktopState() {
   }
 
   function setSelectedModelId(modelId: string): void {
-    setSelectedModelIdForThread(selectedThreadId.value, modelId)
+    setSelectedModelIdForThread(selectedThreadId.value, modelId, false)
   }
 
   function setThreadModelId(threadId: string, modelId: string): void {
@@ -1781,6 +1793,8 @@ export function useDesktopState() {
     const normalizedModelId = modelId.trim()
     const normalizedProviderId = normalizeProviderContextId(providerId)
     if (normalizedProviderId !== 'opencode-zen') {
+      const savedModel = normalizeStoredModelId(selectedModelIdByContext.value[threadId])
+      if (savedModel && (availableModelIds.value.length === 0 || availableModelIds.value.includes(savedModel))) return savedModel
       return normalizedModelId
     }
 
@@ -1949,6 +1963,8 @@ export function useDesktopState() {
       return
     }
     selectedReasoningEffort.value = effort
+    rememberedReasoningEffort = effort
+    try { window.localStorage.setItem(REASONING_EFFORT_STORAGE_KEY, effort) } catch { /* Keep the in-memory selection. */ }
   }
 
   async function updateSelectedSpeedMode(mode: SpeedMode): Promise<void> {
@@ -2047,7 +2063,7 @@ export function useDesktopState() {
       } else if (selectedModelId.value.trim() !== normalizedSelectedModelId) {
         setSelectedModelId(normalizedSelectedModelId)
       }
-      if (providerModelContextId && selectedModelId.value.trim().length > 0) {
+      if (providerModelContextId && !selectedModelIdByContext.value[providerModelContextId] && selectedModelId.value.trim().length > 0) {
         const nextModelMap = cloneStringKeyedRecord(selectedModelIdByContext.value)
         nextModelMap[providerModelContextId] = selectedModelId.value.trim()
         const activeProviderModelContextId = toProviderModelContextId(normalizedProviderId)
@@ -2063,6 +2079,7 @@ export function useDesktopState() {
       }
 
       if (
+        rememberedReasoningEffort === undefined &&
         currentConfig.reasoningEffort &&
         REASONING_EFFORT_OPTIONS.includes(currentConfig.reasoningEffort)
       ) {
