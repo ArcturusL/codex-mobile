@@ -121,7 +121,7 @@
               </span>
             </button>
           </template>
-          <div v-else class="thread-composer-file-mention-empty">{{ t('No matching files') }}</div>
+          <div v-else class="thread-composer-file-mention-empty" role="status">{{ fileMentionStatus || t('No matching files') }}</div>
         </div>
         <div v-else-if="isSlashMenuOpen" class="thread-composer-file-mentions" role="listbox">
           <template v-if="slashSuggestions.length > 0">
@@ -136,9 +136,9 @@
               @mousedown.prevent="applySlashSuggestion(item)"
             >
               <span class="thread-composer-slash-badge">{{ item.badge }}</span>
-              <span class="thread-composer-file-mention-text">
+              <span class="thread-composer-file-mention-text thread-composer-slash-copy">
                 <span class="thread-composer-file-mention-name">{{ item.label }}</span>
-                <span class="thread-composer-file-mention-dir">{{ item.description }}</span>
+                <span class="thread-composer-file-mention-dir" :title="item.description">{{ item.description }}</span>
               </span>
             </button>
           </template>
@@ -605,6 +605,7 @@ const isAttachMenuOpen = ref(false)
 const mentionStartIndex = ref<number | null>(null)
 const mentionQuery = ref('')
 const fileMentionSuggestions = ref<ComposerFileSuggestion[]>([])
+const fileMentionStatus = ref('')
 const isFileMentionOpen = ref(false)
 const fileMentionHighlightedIndex = ref(0)
 const isSlashMenuOpen = ref(false)
@@ -1698,6 +1699,9 @@ function closeInlineMenus(): void {
 }
 
 function closeFileMention(): void {
+  fileMentionSearchToken += 1
+  if (fileMentionDebounceTimer) clearTimeout(fileMentionDebounceTimer)
+  fileMentionStatus.value = ''
   isFileMentionOpen.value = false
   mentionStartIndex.value = null
   mentionQuery.value = ''
@@ -1743,24 +1747,27 @@ function updateInlineMenuState(): void {
 
 async function queueFileMentionSearch(): Promise<void> {
   if (!isFileMentionOpen.value) return
+  const token = ++fileMentionSearchToken
+  if (fileMentionDebounceTimer) clearTimeout(fileMentionDebounceTimer)
+  fileMentionSuggestions.value = []
   const cwd = (props.cwd ?? '').trim()
   if (!cwd) {
-    fileMentionSuggestions.value = []
+    fileMentionStatus.value = t('Choose a project folder before searching files')
     return
   }
-  if (fileMentionDebounceTimer) {
-    clearTimeout(fileMentionDebounceTimer)
-  }
-  const token = ++fileMentionSearchToken
+  fileMentionStatus.value = t('Searching files...')
+  const query = mentionQuery.value
   fileMentionDebounceTimer = setTimeout(async () => {
     try {
-      const rows = await searchComposerFiles(cwd, mentionQuery.value, 20)
+      const rows = await searchComposerFiles(cwd, query, 20)
       if (!isFileMentionOpen.value || token !== fileMentionSearchToken) return
       fileMentionSuggestions.value = rows
+      fileMentionStatus.value = ''
       fileMentionHighlightedIndex.value = 0
-    } catch {
+    } catch (error) {
       if (!isFileMentionOpen.value || token !== fileMentionSearchToken) return
       fileMentionSuggestions.value = []
+      fileMentionStatus.value = `${t('File search failed')}: ${error instanceof Error ? error.message : String(error)}`
     }
   }, 120)
 }
@@ -2256,6 +2263,15 @@ watch(
 
 .thread-composer-file-mention-name {
   @apply truncate text-zinc-900;
+}
+
+.thread-composer-slash-copy {
+  @apply flex-1 flex-col items-stretch gap-0.5;
+}
+
+.thread-composer-slash-copy .thread-composer-file-mention-name {
+  @apply whitespace-normal break-words font-medium;
+  overflow-wrap: anywhere;
 }
 
 .thread-composer-file-mention-dir {
