@@ -1,5 +1,33 @@
-import { dirname, extname, join } from 'node:path'
-import { open, readFile, readdir, stat } from 'node:fs/promises'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
+import { open, readFile, readdir, rm, stat } from 'node:fs/promises'
+
+// Shared by the packaged server and Vite; authentication stays upstream.
+export async function localFileActionsMiddleware(req: IncomingMessage, res: ServerResponse, next: () => void) {
+  const url = new URL(req.url ?? '/', 'http://localhost')
+  if (url.pathname !== '/codex-local-file' || req.method !== 'DELETE') return next()
+  res.setHeader('Content-Type', 'application/json')
+  res.setHeader('Cache-Control', 'no-store')
+  // A custom header prevents cross-origin forms from issuing destructive requests.
+  if (req.headers['x-codex-file-action'] !== 'remove' || req.headers['sec-fetch-site'] === 'cross-site') {
+    res.statusCode = 403
+    res.end(JSON.stringify({ error: 'File removal requires a same-origin request.' }))
+    return
+  }
+  const path = url.searchParams.get('path') ?? ''
+  if (!isAbsolute(path) || path.includes('\0') || resolve(path) === dirname(resolve(path))) {
+    res.statusCode = 400
+    res.end(JSON.stringify({ error: 'Expected a non-root absolute path.' }))
+    return
+  }
+  try {
+    await rm(path, { recursive: true })
+    res.end(JSON.stringify({ ok: true }))
+  } catch (error) {
+    res.statusCode = (error as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500
+    res.end(JSON.stringify({ error: 'Could not remove this item. Check that it exists and you have permission.' }))
+  }
+}
 
 type DirectoryItem = {
   name: string
@@ -134,13 +162,13 @@ function normalizeNewProjectName(value: string): string {
 function toBrowseHref(pathValue: string, newProjectName = ''): string {
   const normalizedName = normalizeNewProjectName(newProjectName)
   const query = normalizedName ? `?newProjectName=${encodeURIComponent(normalizedName)}` : ''
-  return `/codex-local-browse${encodeURI(pathValue)}${query}`
+  return `/codex-local-browse${pathValue.split('/').map(encodeURIComponent).join('/')}${query}`
 }
 
 function toEditHref(pathValue: string, newProjectName = ''): string {
   const normalizedName = normalizeNewProjectName(newProjectName)
   const query = normalizedName ? `?newProjectName=${encodeURIComponent(normalizedName)}` : ''
-  return `/codex-local-edit${encodeURI(pathValue)}${query}`
+  return `/codex-local-edit${pathValue.split('/').map(encodeURIComponent).join('/')}${query}`
 }
 
 function escapeForInlineScriptString(value: string): string {
@@ -248,9 +276,12 @@ export async function createDirectoryListingHtml(localPath: string, options?: { 
     .map((item) => {
       const suffix = item.isDirectory ? '/' : ''
       const editAction = item.editable
-        ? ` <a class="icon-btn" aria-label="Edit ${escapeHtml(item.name)}" href="${escapeHtml(toEditHref(item.path, newProjectName))}" title="Edit">✏️</a>`
+        ? ` <a class="file-action" aria-label="Edit ${escapeHtml(item.name)}" href="${escapeHtml(toEditHref(item.path, newProjectName))}" title="Edit">Edit</a>`
         : ''
-      return `<li class="file-row"><a class="file-link" href="${escapeHtml(toBrowseHref(item.path, newProjectName))}">${escapeHtml(item.name)}${suffix}</a><span class="row-actions">${editAction}</span></li>`
+      const downloadHref = item.isDirectory
+        ? `/codex-api/project-zip?cwd=${encodeURIComponent(item.path)}`
+        : `/codex-local-file?path=${encodeURIComponent(item.path)}`
+      return `<li class="file-row"><a class="file-link" href="${escapeHtml(toBrowseHref(item.path, newProjectName))}">${escapeHtml(item.name)}${suffix}</a><details class="row-actions"><summary class="icon-btn" aria-label="Options for ${escapeHtml(item.name)}" title="Options">…</summary><div class="file-menu">${editAction}<a class="file-action" title="${item.isDirectory ? 'Project ZIP export: applies existing ignore rules and includes project chat metadata' : 'Download file'}" href="${escapeHtml(downloadHref)}" download="${escapeHtml(item.name + (item.isDirectory ? '.zip' : ''))}">${item.isDirectory ? 'Download ZIP' : 'Download'}</a><button type="button" class="file-action remove-file-btn" data-path="${escapeHtml(item.path)}">Remove</button></div></details></li>`
     })
     .join('\n')
 
@@ -295,6 +326,14 @@ export async function createDirectoryListingHtml(localPath: string, options?: { 
     .picker-summary { margin: 10px 0 0; color: #b8d5ff; max-width: 60rem; line-height: 1.45; }
     .row-actions { display: inline-flex; align-items: center; gap: 8px; min-width: 42px; justify-content: flex-end; }
     .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; border: 1px solid #36557a; border-radius: 10px; background: #162643; color: #dbe6ff; text-decoration: none; cursor: pointer; }
+    .row-actions { position: relative; }
+    summary.icon-btn { list-style: none; font-size: 24px; }
+    summary::-webkit-details-marker { display: none; }
+    .row-actions[open] { z-index: 1; }
+    .file-menu { position: absolute; right: 0; top: 100%; min-width: 160px; padding: 5px; border: 1px solid #36557a; border-radius: 10px; background: #162643; box-shadow: 0 8px 24px #0008; }
+    .file-action { display: block; box-sizing: border-box; width: 100%; padding: 10px 12px; border: 0; border-radius: 6px; background: transparent; color: #dbe6ff; font: inherit; text-align: left; cursor: pointer; white-space: nowrap; }
+    .file-action:hover, .file-action:focus-visible { background: #28405f; text-decoration: none; }
+    .remove-file-btn { color: #ffabab; }
     .icon-btn:hover { filter: brightness(1.08); text-decoration: none; }
     .status { margin: 10px 0 0; color: #8cc2ff; min-height: 1.25em; }
     h1 { font-size: 18px; margin: 0; word-break: break-all; }
@@ -313,13 +352,45 @@ export async function createDirectoryListingHtml(localPath: string, options?: { 
     ${parentLink}
     ${actionButtons}
   </div>
-  <p id="status" class="status"></p>
+  <p id="status" class="status" role="status"></p>
   <ul>${rows}</ul>
   <script>
     const status = document.getElementById('status');
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      document.querySelectorAll('.row-actions[open]').forEach((menu) => {
+        menu.open = false;
+        menu.querySelector('summary').focus();
+      });
+    });
     document.addEventListener('click', async (event) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
+      document.querySelectorAll('.row-actions[open]').forEach((menu) => {
+        if (!menu.contains(target)) menu.open = false;
+      });
+      const removeButton = target.closest('.remove-file-btn');
+      if (removeButton instanceof HTMLButtonElement) {
+        const path = removeButton.dataset.path;
+        if (!confirm('Permanently remove ' + path + '? Folders include all contents. This cannot be undone.')) return;
+        removeButton.disabled = true;
+        status.textContent = 'Removing...';
+        try {
+          const response = await fetch('/codex-local-file?path=' + encodeURIComponent(path), {
+            method: 'DELETE', headers: { 'X-Codex-File-Action': 'remove' },
+          });
+          if (!response.ok) throw new Error((await response.json()).error || 'Remove failed.');
+          const row = removeButton.closest('.file-row');
+          const nextFocus = row.nextElementSibling?.querySelector('summary') || row.previousElementSibling?.querySelector('summary') || document.querySelector('.open-folder-btn');
+          row.remove();
+          nextFocus?.focus();
+          status.textContent = 'Removed ' + path;
+        } catch (error) {
+          status.textContent = error.message || 'Remove failed.';
+          removeButton.disabled = false;
+        }
+        return;
+      }
       const button = target.closest('.open-folder-btn, .create-project-btn');
       if (!(button instanceof HTMLButtonElement)) return;
 
