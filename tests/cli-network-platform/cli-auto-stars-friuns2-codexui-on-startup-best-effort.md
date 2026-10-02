@@ -2,7 +2,7 @@
 
 #### Prerequisites
 - `gh` CLI installed and authenticated (`gh auth status`).
-- Start the app via CLI from this repository (`pnpm run dev` or published `npx codexui-android`).
+- Start the app via CLI from this repository (`pnpm run dev` or packaged desktop CLI).
 
 #### Steps
 1. Ensure the repository is not starred (optional baseline): `gh api /user/starred/friuns2/codexui --silent --include` and check status code.

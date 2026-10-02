@@ -5,7 +5,7 @@ Fresh installs without a runnable Codex CLI show a visible chat runtime error.
 
 #### Prerequisites/Setup
 1. Start the app in an isolated environment without `codex` in `PATH` and without `CODEXUI_CODEX_COMMAND`.
-2. Use a mobile viewport such as `390x844`.
+2. Use a desktop viewport such as `1440x900`.
 3. Light theme and dark theme both available from the appearance switcher when the app can reach settings.
 
 #### Steps
@@ -16,7 +16,7 @@ Fresh installs without a runnable Codex CLI show a visible chat runtime error.
 
 #### Expected Results
 - The missing CLI condition is visible in the chat/composer area.
-- The banner remains readable and does not overlap the mobile composer controls.
+- The banner remains readable and does not overlap the composer controls.
 - Dark theme uses a dark error surface, not a light-theme panel.
 
 #### Rollback/Cleanup
