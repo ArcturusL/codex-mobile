@@ -470,7 +470,8 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
   }
 
   if (item.type === 'reasoning') {
-    return []
+    const text = readReasoningText(item)
+    return text ? [{ id: item.id, role: 'assistant', text, messageType: 'agentReasoning' }] : []
   }
 
 
@@ -524,6 +525,13 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
   }
 
   return []
+}
+
+export function readReasoningText(item: { summary?: unknown; content?: unknown }): string {
+  const readParts = (value: unknown) => Array.isArray(value)
+    ? value.filter((part): part is string => typeof part === 'string').join('\n\n').trim()
+    : ''
+  return readParts(item.summary) || readParts(item.content)
 }
 
 function normalizeCommandStatus(value: unknown): CommandExecutionData['status'] {
@@ -637,11 +645,32 @@ export function normalizeThreadMessagesV2(payload: ThreadReadResponse, baseTurnI
     const rawTurnId = typeof turn?.id === 'string' ? turn.id.trim() : ''
     const turnId = rawTurnId.length > 0 ? rawTurnId : undefined
     const items = Array.isArray(turn.items) ? turn.items : []
+    const turnMessages: UiMessage[] = []
     for (const item of items) {
       for (const msg of toUiMessages(item)) {
-        messages.push({ ...msg, turnId, turnIndex })
+        turnMessages.push({ ...msg, turnId, turnIndex })
       }
     }
+    if (['completed', 'failed', 'interrupted'].includes(turn.status) && turnMessages.some((message) =>
+      message.messageType === 'agentReasoning' || message.messageType === 'commandExecution')) {
+      const summary: UiMessage = {
+        id: `turn-summary:${turnId ?? `turn-${turnIndex}`}`,
+        role: 'system',
+        text: 'Worked',
+        messageType: 'worked',
+        turnId,
+        turnIndex,
+      }
+      let finalMessageIndex = -1
+      for (let index = turnMessages.length - 1; index >= 0; index--) {
+        if (turnMessages[index].messageType === 'agentMessage') {
+          finalMessageIndex = index
+          break
+        }
+      }
+      turnMessages.splice(finalMessageIndex < 0 ? turnMessages.length : finalMessageIndex, 0, summary)
+    }
+    messages.push(...turnMessages)
     const errorText = readTurnErrorText(turn)
     if (turn.status === 'failed' && errorText) {
       const errorIdBase = turnId ?? `turn-${turnIndex}`

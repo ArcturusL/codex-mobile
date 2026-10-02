@@ -26,6 +26,7 @@
         class="conversation-item"
         :data-role="message.role"
         :data-message-type="message.messageType || ''"
+        :data-turn-id="message.turnId"
       >
         <div v-if="isCommandMessage(message)" class="message-row" data-role="system">
           <div class="message-stack" data-role="system">
@@ -61,17 +62,19 @@
                         'cmd-compact': true,
                       },
                     ]"
+                    :aria-expanded="isCommandExpanded(cmd)"
                     @click="toggleCommandExpand(cmd)"
                   >
                     <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isCommandExpanded(cmd) }">▶</span>
-                    <code class="cmd-label">{{ cmd.commandExecution?.command || '(command)' }}</code>
+                    <code class="cmd-label" :title="cmd.commandExecution?.command">{{ cmd.commandExecution?.command || '(command)' }}</code>
                     <span class="cmd-status">{{ commandStatusLabel(cmd) }}</span>
                   </button>
                   <div
                     class="cmd-output-wrap"
                     :class="{ 'cmd-output-visible': isCommandExpanded(cmd) }"
                   >
-                    <div class="cmd-output-inner">
+                    <div v-if="isCommandExpanded(cmd)" class="cmd-output-inner">
+                      <pre class="cmd-output cmd-execution-meta" v-text="commandExecutionDetails(cmd)"></pre>
                       <pre
                         class="cmd-output"
                         :class="{ 'cmd-output-condensed': isCommandOutputCondensed(cmd) }"
@@ -93,17 +96,19 @@
                     'cmd-compact': isCommandCompact(message),
                   },
                 ]"
+                :aria-expanded="isCommandExpanded(message)"
                 @click="toggleCommandExpand(message)"
               >
                 <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isCommandExpanded(message) }">▶</span>
-                <code class="cmd-label">{{ message.commandExecution?.command || '(command)' }}</code>
+                <code class="cmd-label" :title="message.commandExecution?.command">{{ message.commandExecution?.command || '(command)' }}</code>
                 <span class="cmd-status">{{ commandStatusLabel(message) }}</span>
               </button>
               <div
                 class="cmd-output-wrap"
                 :class="{ 'cmd-output-visible': isCommandExpanded(message) }"
               >
-                <div class="cmd-output-inner">
+                <div v-if="isCommandExpanded(message)" class="cmd-output-inner">
+                  <pre class="cmd-output cmd-execution-meta" v-text="commandExecutionDetails(message)"></pre>
                   <pre
                     class="cmd-output"
                     :class="{ 'cmd-output-condensed': isCommandOutputCondensed(message) }"
@@ -113,6 +118,13 @@
               </div>
             </template>
           </div>
+        </div>
+
+        <div v-else-if="message.messageType === 'agentReasoning'" class="message-row" data-role="system">
+          <details class="worked-reasoning">
+            <summary>Thinking</summary>
+            <div class="plan-card-markdown" v-html="renderMarkdownBlocksAsHtml(message.text)" />
+          </details>
         </div>
 
         <div
@@ -268,7 +280,7 @@
                   <code v-if="message.automationDisplayName">{{ message.automationDisplayName }}</code>
                 </div>
                 <div v-if="message.messageType === 'worked'" class="worked-separator-wrap" aria-live="polite">
-                  <button type="button" class="worked-separator" @click="toggleWorkedExpand(message)">
+                  <button type="button" class="worked-separator" :aria-expanded="isWorkedExpanded(message)" @click="toggleWorkedExpand(message)">
                     <span class="worked-separator-line" aria-hidden="true" />
                     <span class="worked-chevron" :class="{ 'worked-chevron-open': isWorkedExpanded(message) }">▶</span>
                     <p class="worked-separator-text">{{ message.text }}</p>
@@ -276,39 +288,49 @@
                   </button>
                   <div v-if="isWorkedExpanded(message)" class="worked-details">
                     <div
-                      v-for="cmd in getCommandsForWorked(messages, messages.indexOf(message))"
+                      v-for="cmd in workedActivityById.get(message.id) ?? []"
                       :key="`worked-cmd-${cmd.id}`"
                       class="worked-cmd-item"
+                      :data-message-type="cmd.messageType"
                     >
-                      <button
-                        type="button"
-                        class="cmd-row"
-                        :class="[
-                          commandStatusClass(cmd),
-                          {
-                            'cmd-expanded': isCommandExpanded(cmd),
-                            'cmd-compact': isCommandCompact(cmd),
-                          },
-                        ]"
-                        @click="toggleCommandExpand(cmd)"
-                      >
-                        <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isCommandExpanded(cmd) }">▶</span>
-                        <code class="cmd-label">{{ cmd.commandExecution?.command || '(command)' }}</code>
-                        <span class="cmd-status">{{ commandStatusLabel(cmd) }}</span>
-                      </button>
-                      <div
-                        class="cmd-output-wrap"
-                        :class="{ 'cmd-output-visible': isCommandExpanded(cmd) }"
-                      >
-                        <div class="cmd-output-inner">
-                          <pre
-                            class="cmd-output"
-                            :class="{ 'cmd-output-condensed': isCommandOutputCondensed(cmd) }"
-                            v-text="cmd.commandExecution?.aggregatedOutput || '(no output)'"
-                          ></pre>
-                        </div>
+                      <div v-if="cmd.messageType === 'agentReasoning'" class="worked-reasoning">
+                        <p class="worked-reasoning-label">Thinking</p>
+                        <div class="plan-card-markdown" v-html="renderMarkdownBlocksAsHtml(cmd.text)" />
                       </div>
+                      <template v-else>
+                        <button
+                          type="button"
+                          class="cmd-row"
+                          :class="[
+                            commandStatusClass(cmd),
+                            {
+                              'cmd-expanded': isCommandExpanded(cmd),
+                              'cmd-compact': isCommandCompact(cmd),
+                            },
+                          ]"
+                          :aria-expanded="isCommandExpanded(cmd)"
+                          @click="toggleCommandExpand(cmd)"
+                        >
+                          <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isCommandExpanded(cmd) }">▶</span>
+                          <code class="cmd-label" :title="cmd.commandExecution?.command">{{ cmd.commandExecution?.command || '(command)' }}</code>
+                          <span class="cmd-status">{{ commandStatusLabel(cmd) }}</span>
+                        </button>
+                        <div
+                          class="cmd-output-wrap"
+                          :class="{ 'cmd-output-visible': isCommandExpanded(cmd) }"
+                        >
+                          <div v-if="isCommandExpanded(cmd)" class="cmd-output-inner">
+                            <pre class="cmd-output cmd-execution-meta" v-text="commandExecutionDetails(cmd)"></pre>
+                            <pre
+                              class="cmd-output"
+                              :class="{ 'cmd-output-condensed': isCommandOutputCondensed(cmd) }"
+                              v-text="cmd.commandExecution?.aggregatedOutput || '(no output)'"
+                            ></pre>
+                          </div>
+                        </div>
+                      </template>
                     </div>
+                    <p v-if="!workedActivityById.get(message.id)?.length" class="worked-empty">No activity recorded for this turn.</p>
                   </div>
                 </div>
                 <div v-else-if="isPlanMessage(message)" class="plan-card" :data-streaming="message.messageType === 'plan.live'">
@@ -1071,6 +1093,7 @@ function isCopyableAssistantMessage(message: UiMessage): boolean {
   return message.role === 'assistant'
     && !isCommandMessage(message)
     && message.messageType !== 'worked'
+    && message.messageType !== 'agentReasoning'
     && !(message.messageType ?? '').endsWith('.live')
 }
 
@@ -1096,18 +1119,45 @@ const isLiveTurnRuntime = computed(() =>
   Boolean(props.liveOverlay) || activeCommandMessageId.value.length > 0 || hasLiveAssistantText.value,
 )
 
+// Index the complete loaded history so an activity group survives the render window.
+const workedActivityById = computed(() => {
+  const activityByTurn = new Map<string, UiMessage[]>()
+  for (const message of props.messages) {
+    if (!message.turnId || (!isCommandMessage(message) && message.messageType !== 'agentReasoning')) continue
+    const activity = activityByTurn.get(message.turnId) ?? []
+    activity.push(message)
+    activityByTurn.set(message.turnId, activity)
+  }
+  const result = new Map<string, UiMessage[]>()
+  for (const message of props.messages) {
+    if (message.messageType === 'worked' && message.turnId) {
+      result.set(message.id, activityByTurn.get(message.turnId) ?? [])
+    }
+  }
+  return result
+})
+
+const displayMessages = computed(() => {
+  const groupedIds = new Set<string>()
+  for (const activity of workedActivityById.value.values()) {
+    for (const message of activity) groupedIds.add(message.id)
+  }
+  return props.messages.filter((message) => !groupedIds.has(message.id))
+})
+
 const groupedCommandsByLatestId = computed<Record<string, UiMessage[]>>(() => {
   const next: Record<string, UiMessage[]> = {}
-  for (let index = 0; index < props.messages.length;) {
-    const message = props.messages[index]
+  const messages = displayMessages.value
+  for (let index = 0; index < messages.length;) {
+    const message = messages[index]
     if (!isCommandMessage(message)) {
       index += 1
       continue
     }
 
     const block: UiMessage[] = []
-    while (index < props.messages.length && isCommandMessage(props.messages[index])) {
-      block.push(props.messages[index])
+    while (index < messages.length && isCommandMessage(messages[index]) && messages[index].turnId === message.turnId) {
+      block.push(messages[index])
       index += 1
     }
 
@@ -1275,6 +1325,13 @@ function selectDiffViewerChange(change: UiFileChange): void {
   }
 }
 
+function commandExecutionDetails(message: UiMessage): string {
+  const command = message.commandExecution
+  return [command?.command, command?.cwd, command?.exitCode == null ? '' : `Exit code: ${command.exitCode}`]
+    .filter(Boolean)
+    .join('\n')
+}
+
 function commandStatusLabel(message: UiMessage): string {
   const ce = message.commandExecution
   if (!ce) return ''
@@ -1282,7 +1339,7 @@ function commandStatusLabel(message: UiMessage): string {
   switch (ce.status) {
     case 'inProgress': return compact ? 'Running' : '⟳ Running'
     case 'completed': return ce.exitCode === 0 ? (compact ? 'Done' : '✓ Completed') : `Exit ${ce.exitCode ?? '?'}`
-    case 'failed': return compact ? 'Failed' : '✗ Failed'
+    case 'failed': return `${compact ? 'Failed' : '✗ Failed'}${ce.exitCode == null ? '' : ` (${ce.exitCode})`}`
     case 'declined': return compact ? 'Declined' : '⊘ Declined'
     case 'interrupted': return compact ? 'Stopped' : '⊘ Interrupted'
     default: return ''
@@ -1303,16 +1360,6 @@ function pruneCommandIdSet(source: Set<string>, validIds: Set<string>): Set<stri
     if (validIds.has(id)) next.add(id)
   }
   return next.size === source.size ? source : next
-}
-
-function getCommandsForWorked(messages: UiMessage[], workedIndex: number): UiMessage[] {
-  const result: UiMessage[] = []
-  for (let i = workedIndex - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m.messageType === 'commandExecution') result.unshift(m)
-    else if (m.role === 'user' || m.messageType === 'worked') break
-  }
-  return result
 }
 
 const props = defineProps<{
@@ -1444,7 +1491,7 @@ const LOAD_MORE_SCROLL_THRESHOLD_PX = 200
 const renderWindowStart = ref(0)
 const isLoadingMore = ref(false)
 
-const visibleMessages = computed(() => props.messages.slice(renderWindowStart.value))
+const visibleMessages = computed(() => displayMessages.value.slice(renderWindowStart.value))
 const hasMoreAbove = computed(() => renderWindowStart.value > 0 || props.hasMorePersistedAbove === true)
 
 const showJumpToLatestButton = computed(
@@ -4405,6 +4452,7 @@ watch(
     )
     expandedCommandIds.value = pruneCommandIdSet(expandedCommandIds.value, commandIds)
     collapsedAutoCommandIds.value = pruneCommandIdSet(collapsedAutoCommandIds.value, commandIds)
+    expandedWorkedIds.value = pruneCommandIdSet(expandedWorkedIds.value, new Set(workedActivityById.value.keys()))
     expandedCommandGroupIds.value = pruneCommandIdSet(
       expandedCommandGroupIds.value,
       new Set(Object.keys(groupedCommandsByLatestId.value)),
@@ -4423,9 +4471,9 @@ watch(
     // Scrolled up: only clamp downward so renderWindowStart never exceeds the list length
     //   (prevents visibleMessages from becoming empty after a rollback).
     if (autoFollowOutput.value) {
-      renderWindowStart.value = Math.max(0, next.length - RENDER_WINDOW_SIZE)
+      renderWindowStart.value = Math.max(0, displayMessages.value.length - RENDER_WINDOW_SIZE)
     } else {
-      renderWindowStart.value = Math.min(renderWindowStart.value, Math.max(0, next.length - 1))
+      renderWindowStart.value = Math.min(renderWindowStart.value, Math.max(0, displayMessages.value.length - 1))
     }
 
     await scheduleConversationScroll()
@@ -4477,7 +4525,7 @@ watch(
   () => props.isLoading,
   async (loading) => {
     if (loading) return
-    renderWindowStart.value = Math.max(0, props.messages.length - RENDER_WINDOW_SIZE)
+    renderWindowStart.value = Math.max(0, displayMessages.value.length - RENDER_WINDOW_SIZE)
     await scheduleConversationScroll()
   },
 )
@@ -4488,11 +4536,12 @@ watch(
     autoFollowOutput.value = true
     modalImageUrl.value = ''
     isLoadingMore.value = false
+    expandedWorkedIds.value = new Set()
     fileChangeActionState.value = {}
     fileChangeActionError.value = {}
     fileChangeRedoPatchIds.value = {}
     // Apply immediately for cached threads where isLoading never toggles.
-    renderWindowStart.value = Math.max(0, props.messages.length - RENDER_WINDOW_SIZE)
+    renderWindowStart.value = Math.max(0, displayMessages.value.length - RENDER_WINDOW_SIZE)
     await scheduleConversationScroll()
   },
   { flush: 'post' },
@@ -5254,7 +5303,28 @@ onBeforeUnmount(() => {
 }
 
 .worked-cmd-item {
-  @apply flex flex-col;
+  @apply flex min-w-0 flex-col;
+}
+
+.worked-reasoning {
+  @apply w-full min-w-0 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700;
+  overflow-wrap: anywhere;
+}
+
+.worked-reasoning summary {
+  @apply cursor-pointer;
+}
+
+.worked-reasoning-label {
+  @apply m-0 mb-1 font-medium;
+}
+
+.worked-empty {
+  @apply m-0 text-sm text-zinc-500;
+}
+
+.cmd-execution-meta {
+  @apply border-b border-zinc-700 text-zinc-400;
 }
 
 .image-modal-backdrop {

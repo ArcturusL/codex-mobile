@@ -26,6 +26,58 @@ function threadReadResponseWithContent(content: ThreadReadResponse['thread']['tu
 }
 
 describe('normalizeThreadMessagesV2', () => {
+  it('restores ordered reasoning and command history with an activity entry for each finished turn', () => {
+    const response = threadReadResponseWithContent([])
+    response.thread.turns = ['completed', 'failed', 'interrupted'].map((status, index) => ({
+      id: `turn-${index}`,
+      status: status as 'completed' | 'failed' | 'interrupted',
+      error: null,
+      items: [
+        { id: `reasoning-${index}`, type: 'reasoning', summary: ['Inspect files', 'Check changes'], content: ['Content fallback'] },
+        {
+          id: `command-${index}`, type: 'commandExecution', command: 'pwd', cwd: '/tmp/project',
+          processId: null, status: 'completed', commandActions: [], aggregatedOutput: '/tmp/project\n',
+          exitCode: 0, durationMs: 12,
+        },
+        { id: `answer-${index}`, type: 'agentMessage', text: 'Done' },
+      ],
+    }))
+
+    const messages = normalizeThreadMessagesV2(response, 10)
+
+    expect(messages.map((message) => message.id)).toEqual([0, 1, 2].flatMap((index) => [
+      `reasoning-${index}`, `command-${index}`, `turn-summary:turn-${index}`, `answer-${index}`,
+    ]))
+    expect(messages[0]).toMatchObject({
+      text: 'Inspect files\n\nCheck changes', messageType: 'agentReasoning', turnId: 'turn-0', turnIndex: 10,
+    })
+    expect(messages[1]?.commandExecution).toMatchObject({
+      command: 'pwd', cwd: '/tmp/project', status: 'completed', aggregatedOutput: '/tmp/project\n', exitCode: 0,
+    })
+    expect(messages.filter((message) => message.messageType === 'worked').map((message) => message.turnIndex))
+      .toEqual([10, 11, 12])
+  })
+
+  it('uses available reasoning content when no summary exists and ignores empty items', () => {
+    const messages = normalizeThreadMessagesV2(threadReadResponseWithContent([
+      { id: 'content-only', type: 'reasoning', summary: [], content: ['Available content'] },
+      { id: 'empty', type: 'reasoning', summary: [], content: [] },
+    ]))
+
+    expect(messages.map((message) => [message.id, message.text])).toEqual([
+      ['content-only', 'Available content'], ['turn-summary:turn-1', 'Worked'],
+    ])
+  })
+
+  it('does not label an active turn as finished', () => {
+    const response = threadReadResponseWithContent([
+      { id: 'reasoning-active', type: 'reasoning', summary: ['Working'], content: [] },
+    ])
+    response.thread.turns[0].status = 'inProgress'
+
+    expect(normalizeThreadMessagesV2(response).map((message) => message.messageType)).toEqual(['agentReasoning'])
+  })
+
   it('preserves selected skill inputs on the rendered user message', () => {
     const messages = normalizeThreadMessagesV2(threadReadResponseWithContent([{
       type: 'userMessage',

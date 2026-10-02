@@ -1281,6 +1281,14 @@
   @apply bg-black/55;
 }
 
+:root.dark .worked-reasoning {
+  @apply border-zinc-700 bg-zinc-900 text-zinc-300;
+}
+
+:root.dark .worked-empty {
+  @apply text-zinc-400;
+}
+
 :root.dark .worked-separator-text {
   @apply text-zinc-300;
 }
