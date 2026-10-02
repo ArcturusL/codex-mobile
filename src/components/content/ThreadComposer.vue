@@ -123,6 +123,29 @@
           </template>
           <div v-else class="thread-composer-file-mention-empty">{{ t('No matching files') }}</div>
         </div>
+        <div v-else-if="isSlashMenuOpen" class="thread-composer-file-mentions" role="listbox">
+          <template v-if="slashSuggestions.length > 0">
+            <button
+              v-for="(item, index) in slashSuggestions"
+              :key="item.id"
+              class="thread-composer-file-mention-row"
+              :class="{ 'is-active': index === slashHighlightedIndex }"
+              type="button"
+              role="option"
+              :aria-selected="index === slashHighlightedIndex"
+              @mousedown.prevent="applySlashSuggestion(item)"
+            >
+              <span class="thread-composer-slash-badge">{{ item.badge }}</span>
+              <span class="thread-composer-file-mention-text">
+                <span class="thread-composer-file-mention-name">{{ item.label }}</span>
+                <span class="thread-composer-file-mention-dir">{{ item.description }}</span>
+              </span>
+            </button>
+          </template>
+          <div v-else class="thread-composer-file-mention-empty">
+            {{ slashMenuMode === 'skills' ? t('No skills found') : t('No results') }}
+          </div>
+        </div>
         <textarea
           ref="inputRef"
           v-model="draft"
@@ -131,6 +154,8 @@
           :disabled="isInteractionDisabled"
           @input="onInputChange"
           @keydown="onInputKeydown"
+          @keyup="onInputKeyup"
+          @click="updateInlineMenuState"
           @paste="onInputPaste"
         />
         <button
@@ -423,6 +448,7 @@ import IconTablerMinimize from '../icons/IconTablerMinimize.vue'
 import IconTablerPlayerStopFilled from '../icons/IconTablerPlayerStopFilled.vue'
 import ComposerDropdown from './ComposerDropdown.vue'
 import ComposerSearchDropdown from './ComposerSearchDropdown.vue'
+import { findComposerInlineTrigger } from './composerInlineTrigger'
 
 type SkillSourceBadge = {
   badge: string
@@ -431,6 +457,15 @@ type SkillSourceBadge = {
 }
 
 type SkillItem = { name: string; displayName?: string; description: string; path: string; scope?: string; enabled?: boolean }
+
+type SlashSuggestion = {
+  id: string
+  label: string
+  description: string
+  badge: string
+  kind: 'command' | 'prompt' | 'skill'
+  value: string
+}
 
 const props = defineProps<{
   activeThreadId: string
@@ -572,6 +607,11 @@ const mentionQuery = ref('')
 const fileMentionSuggestions = ref<ComposerFileSuggestion[]>([])
 const isFileMentionOpen = ref(false)
 const fileMentionHighlightedIndex = ref(0)
+const isSlashMenuOpen = ref(false)
+const slashMenuMode = ref<'commands' | 'skills'>('commands')
+const slashStartIndex = ref<number | null>(null)
+const slashQuery = ref('')
+const slashHighlightedIndex = ref(0)
 const isComposerExpanded = ref(false)
 const isDraftOverflowing = ref(false)
 let composerOverflowMeasurementQueued = false
@@ -633,13 +673,57 @@ const skillDropdownOptions = computed(() =>
   ],
 )
 
+const slashSuggestions = computed<SlashSuggestion[]>(() => {
+  const query = slashQuery.value.trim().toLowerCase()
+  if (slashMenuMode.value === 'skills') {
+    return (props.skills ?? [])
+      .filter((skill) => !selectedSkills.value.some((selected) => selected.path === skill.path))
+      .filter((skill) => !query || [skill.name, skill.displayName, skill.description].some((value) => value?.toLowerCase().includes(query)))
+      .map((skill) => ({
+        id: `skill:${skill.path}`,
+        label: skill.displayName || skill.name,
+        description: skill.description,
+        badge: 'S',
+        kind: 'skill' as const,
+        value: skill.path,
+      }))
+  }
+
+  const commands: SlashSuggestion[] = [
+    { id: 'command:mention', label: '/mention', description: t('Mention a file'), badge: '/', kind: 'command', value: 'mention' },
+    { id: 'command:skills', label: '/skills', description: t('Use a skill'), badge: '/', kind: 'command', value: 'skills' },
+    { id: 'command:plan', label: '/plan', description: t('Switch to Plan mode'), badge: '/', kind: 'command', value: 'plan' },
+  ]
+  const prompts = savedPrompts.value.map((prompt) => ({
+    id: `prompt:${prompt.path}`,
+    label: `/prompts:${prompt.name}`,
+    description: prompt.description,
+    badge: 'T',
+    kind: 'prompt' as const,
+    value: prompt.path,
+  }))
+  const skills = (props.skills ?? [])
+    .filter((skill) => !selectedSkills.value.some((selected) => selected.path === skill.path))
+    .map((skill) => ({
+      id: `skill:${skill.path}`,
+      label: `/${skill.displayName || skill.name}`,
+      description: skill.description,
+      badge: 'S',
+      kind: 'skill' as const,
+      value: skill.path,
+    }))
+  return [...commands, ...prompts, ...skills].filter((item) => (
+    !query || item.label.slice(1).toLowerCase().startsWith(query) || item.description.toLowerCase().includes(query)
+  ))
+})
+
 const canSubmit = computed(() => {
   if (props.disabled) return false
   if (props.isUpdatingSpeedMode) return false
   if (!props.activeThreadId) return false
   if (isPlanModeWaitingForModel.value) return false
   if (pendingAttachmentCount.value > 0) return false
-  return draft.value.trim().length > 0 || selectedImages.value.length > 0 || fileAttachments.value.length > 0
+  return draft.value.trim().length > 0 || selectedImages.value.length > 0 || fileAttachments.value.length > 0 || selectedSkills.value.length > 0
 })
 const hasUnsavedDraft = computed(() =>
   draft.value.trim().length > 0
@@ -722,7 +806,7 @@ const placeholderText = computed(() =>
       : t('Type a message... (@ for files)'),
 )
 const hasSubmitContent = computed(() =>
-  draft.value.trim().length > 0 || selectedImages.value.length > 0 || fileAttachments.value.length > 0,
+  draft.value.trim().length > 0 || selectedImages.value.length > 0 || fileAttachments.value.length > 0 || selectedSkills.value.length > 0,
 )
 const draftLineCount = computed(() => draft.value.split('\n').length)
 const hasExpandedComposerToggle = computed(() =>
@@ -1548,19 +1632,21 @@ function onInputChange(): void {
     dictationFeedback.value = ''
   }
   queueComposerOverflowMeasurement()
-  updateFileMentionState()
+  updateInlineMenuState()
 }
 
 function onInputKeydown(event: KeyboardEvent): void {
-  if (isFileMentionOpen.value) {
+  if (isFileMentionOpen.value || isSlashMenuOpen.value) {
     if (event.key === 'Escape') {
       event.preventDefault()
-      closeFileMention()
+      closeInlineMenus()
       return
     }
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      if (fileMentionSuggestions.value.length > 0) {
+      if (isSlashMenuOpen.value && slashSuggestions.value.length > 0) {
+        slashHighlightedIndex.value = (slashHighlightedIndex.value + 1) % slashSuggestions.value.length
+      } else if (fileMentionSuggestions.value.length > 0) {
         fileMentionHighlightedIndex.value =
           (fileMentionHighlightedIndex.value + 1) % fileMentionSuggestions.value.length
       }
@@ -1568,7 +1654,10 @@ function onInputKeydown(event: KeyboardEvent): void {
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault()
-      if (fileMentionSuggestions.value.length > 0) {
+      if (isSlashMenuOpen.value && slashSuggestions.value.length > 0) {
+        const size = slashSuggestions.value.length
+        slashHighlightedIndex.value = (slashHighlightedIndex.value + size - 1) % size
+      } else if (fileMentionSuggestions.value.length > 0) {
         const size = fileMentionSuggestions.value.length
         fileMentionHighlightedIndex.value = (fileMentionHighlightedIndex.value + size - 1) % size
       }
@@ -1576,11 +1665,14 @@ function onInputKeydown(event: KeyboardEvent): void {
     }
     if (event.key === 'Enter' || event.key === 'Tab') {
       event.preventDefault()
-      const selected = fileMentionSuggestions.value[fileMentionHighlightedIndex.value]
-      if (selected) {
-        applyFileMention(selected)
+      if (isSlashMenuOpen.value) {
+        const selected = slashSuggestions.value[slashHighlightedIndex.value]
+        if (selected) applySlashSuggestion(selected)
+        else closeSlashMenu()
       } else {
-        closeFileMention()
+        const selected = fileMentionSuggestions.value[fileMentionHighlightedIndex.value]
+        if (selected) applyFileMention(selected)
+        else closeFileMention()
       }
       return
     }
@@ -1596,6 +1688,15 @@ function onInputKeydown(event: KeyboardEvent): void {
   }
 }
 
+function onInputKeyup(event: KeyboardEvent): void {
+  if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) updateInlineMenuState()
+}
+
+function closeInlineMenus(): void {
+  closeFileMention()
+  closeSlashMenu()
+}
+
 function closeFileMention(): void {
   isFileMentionOpen.value = false
   mentionStartIndex.value = null
@@ -1604,27 +1705,40 @@ function closeFileMention(): void {
   fileMentionHighlightedIndex.value = 0
 }
 
-function updateFileMentionState(): void {
+function closeSlashMenu(): void {
+  isSlashMenuOpen.value = false
+  slashMenuMode.value = 'commands'
+  slashStartIndex.value = null
+  slashQuery.value = ''
+  slashHighlightedIndex.value = 0
+}
+
+function updateInlineMenuState(): void {
   const input = inputRef.value
   if (!input) {
-    closeFileMention()
+    closeInlineMenus()
     return
   }
   const cursor = input.selectionStart ?? draft.value.length
-  const beforeCursor = draft.value.slice(0, cursor)
-  const match = beforeCursor.match(/(^|\s)(@[^\s@]*)$/)
-  if (!match) {
-    closeFileMention()
+  const trigger = findComposerInlineTrigger(draft.value, cursor)
+  if (!trigger) {
+    closeInlineMenus()
     return
   }
-
-  const mentionToken = match[2] ?? ''
-  const mentionOffset = mentionToken.length
-  const startIndex = cursor - mentionOffset
-  mentionStartIndex.value = startIndex
-  mentionQuery.value = mentionToken.slice(1)
-  isFileMentionOpen.value = true
-  void queueFileMentionSearch()
+  if (trigger.kind === 'file') {
+    closeSlashMenu()
+    mentionStartIndex.value = trigger.start
+    mentionQuery.value = trigger.query
+    isFileMentionOpen.value = true
+    void queueFileMentionSearch()
+    return
+  }
+  closeFileMention()
+  slashMenuMode.value = 'commands'
+  slashStartIndex.value = trigger.start
+  slashQuery.value = trigger.query
+  slashHighlightedIndex.value = 0
+  isSlashMenuOpen.value = true
 }
 
 async function queueFileMentionSearch(): Promise<void> {
@@ -1661,6 +1775,61 @@ function applyFileMention(suggestion: ComposerFileSuggestion): void {
   addFileAttachment(suggestion.path)
   closeFileMention()
   nextTick(() => input?.focus())
+}
+
+function replaceSlashToken(replacement = ''): void {
+  const input = inputRef.value
+  const start = slashStartIndex.value
+  if (start === null || !input) return
+  const cursor = input.selectionStart ?? draft.value.length
+  draft.value = `${draft.value.slice(0, start)}${replacement}${draft.value.slice(cursor)}`
+}
+
+function applySlashSuggestion(suggestion: SlashSuggestion): void {
+  if (suggestion.kind === 'skill') {
+    const skill = (props.skills ?? []).find((item) => item.path === suggestion.value)
+    if (skill && !selectedSkills.value.some((item) => item.path === skill.path)) {
+      selectedSkills.value = [...selectedSkills.value, skill]
+    }
+    replaceSlashToken()
+    closeSlashMenu()
+    void nextTick(() => inputRef.value?.focus())
+    return
+  }
+  if (suggestion.kind === 'prompt') {
+    const prompt = savedPrompts.value.find((item) => item.path === suggestion.value)
+    replaceSlashToken(prompt?.content ?? '')
+    closeSlashMenu()
+    void nextTick(() => inputRef.value?.focus())
+    return
+  }
+  if (suggestion.value === 'skills') {
+    replaceSlashToken()
+    slashStartIndex.value = 0
+    slashQuery.value = ''
+    slashMenuMode.value = 'skills'
+    slashHighlightedIndex.value = 0
+    isSlashMenuOpen.value = true
+    return
+  }
+  if (suggestion.value === 'mention') {
+    replaceSlashToken('@')
+    closeSlashMenu()
+    void nextTick(() => {
+      const input = inputRef.value
+      if (!input) return
+      input.setSelectionRange(1, 1)
+      updateInlineMenuState()
+      input.focus()
+    })
+    return
+  }
+  if (suggestion.value === 'plan') {
+    replaceSlashToken()
+    closeSlashMenu()
+    if (!isPlanModeSelected.value) emit('update:selected-collaboration-mode', 'plan')
+    void nextTick(() => inputRef.value?.focus())
+  }
 }
 
 function hydrateDraft(payload: ComposerDraftPayload): void {
@@ -2075,6 +2244,10 @@ watch(
 
 .thread-composer-file-mention-icon-file {
   @apply h-4 w-4 text-zinc-600;
+}
+
+.thread-composer-slash-badge {
+  @apply inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded bg-zinc-100 px-1 text-[10px] font-semibold text-zinc-600;
 }
 
 .thread-composer-file-mention-text {

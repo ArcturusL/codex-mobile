@@ -17,15 +17,17 @@ The composer control row uses one `Skills` dropdown for both skills and saved pr
 6. Click the prompt row and confirm the prompt text is inserted into the composer draft without toggling a skill
 7. Reopen `Skills`, click the `×` button for `ui-test-prompt`, and confirm the removal dialog
 8. Confirm the prompt disappears from the dropdown while skill rows remain available
-9. Type `/` into the composer and verify no slash skill picker appears
-10. Switch to dark theme and repeat the visibility check for the combined `Skills` dropdown contents
+9. Type `/` into the composer and verify the inline picker shows `/mention`, `/skills`, `/plan`, saved prompts, and installed skills
+10. Choose `/skills`, select a skill from the inline picker, and confirm it becomes a skill chip without leaving slash text in the draft
+11. Type `/prompts:`, select the saved prompt, and confirm its content replaces the slash token
+12. Switch to dark theme and repeat the visibility check for the combined `Skills` dropdown and inline picker contents
 
 #### Expected Results
 - The composer shows one `Skills` dropdown for skills and prompts; no standalone `Prompt` dropdown is rendered
 - The combined `Skills` popup uses the wider rounded layout with vertically stacked label/description rows
 - Skill rows show readable source markers that distinguish repo, user, system, and plugin-provided skills
 - Prompt rows show a readable `Prompt` marker and are the only rows with an inline remove action
-- Typing `/` in the composer does not open a skill picker
+- Typing `/` opens a keyboard-accessible command picker; installed skills can be filtered directly, `/skills` opens the full skill picker, and saved prompts are available as `/prompts:<name>`
 - The `+` action creates a markdown file in the Codex prompt store and adds it to the `Skills` dropdown immediately
 - Selecting a saved prompt appends its content into the draft without sending the message
 - Clicking `×` removes only the targeted prompt and updates the dropdown immediately
