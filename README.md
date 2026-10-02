@@ -276,3 +276,43 @@ Built for speed, portability, and a little bit of chaos 😏
 ---
 
 Forked from [pavel-voronin/codex-web-local](https://github.com/pavel-voronin/codex-web-local) by Pavel Voronin.
+
+### Persistent custom login password
+
+The default random password is regenerated on each start. You can also set a
+second, persistent password: both passwords use the same login form and sessions.
+Create `codexui-custom-password` in the service's `CODEX_HOME` (default
+`~/.codex`), or set `CODEX_WEB_CUSTOM_PASSWORD_FILE` to an absolute file path
+outside your release directories. Keep that file and the service environment
+configuration across upgrades; restart the service after setting or changing it.
+An explicitly configured missing/unreadable file, or an empty/multiline file,
+prevents startup. The optional default file may be absent.
+
+Run this as the service user to enter a password without putting it in shell
+history or command arguments:
+
+```bash
+python3 - <<'PY'
+import getpass, os
+from pathlib import Path
+path = Path(os.environ.get('CODEX_WEB_CUSTOM_PASSWORD_FILE') or
+            str(Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex') / 'codexui-custom-password'))
+password = getpass.getpass('Custom login password: ')
+if not password or '\n' in password or '\r' in password:
+    raise SystemExit('Password must be one non-empty line')
+if password != getpass.getpass('Confirm password: '):
+    raise SystemExit('Passwords do not match')
+path.parent.mkdir(parents=True, exist_ok=True)
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, 'w') as stream:
+    os.fchmod(stream.fileno(), 0o600)
+    stream.write(password + '\n')
+print('Custom password saved. Restart the service to apply.')
+PY
+```
+
+This file is a plaintext credential: restrict it to the service user (`0600`),
+keep it out of Git, and do not print it in deployment logs. Remove the file and
+unset the override, then restart to disable the custom password. Existing login
+sessions keep their normal lifetime. `--password` remains the primary password;
+`--no-password` still disables authentication entirely.

@@ -222,6 +222,25 @@ export type AuthSession = {
 }
 
 export function createAuthSession(password: string): AuthSession {
+  // Read once at startup; keep the user credential outside replaceable releases.
+  const customPasswordPath = process.env.CODEX_WEB_CUSTOM_PASSWORD_FILE?.trim()
+    || join(getCodexHomeDir(), 'codexui-custom-password')
+  let customPassword = ''
+  try {
+    customPassword = readFileSync(customPasswordPath, 'utf8').replace(/\r?\n$/, '')
+    if (!customPassword || /[\r\n]/.test(customPassword)) {
+      throw new Error('Custom password file must contain one non-empty line')
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || process.env.CODEX_WEB_CUSTOM_PASSWORD_FILE?.trim()) {
+      throw new Error('Unable to load custom login password file')
+    }
+  }
+  const acceptsPassword = (provided: string): boolean => {
+    const matchesPrimary = constantTimeCompare(provided, password)
+    const matchesCustom = customPassword !== '' && constantTimeCompare(provided, customPassword)
+    return matchesPrimary || matchesCustom
+  }
   const validTokens = readPersistedSessions()
   if (pruneExpiredSessions(validTokens)) {
     tryPersistSessions(validTokens)
@@ -246,13 +265,14 @@ export function createAuthSession(password: string): AuthSession {
         let parsed: { password?: string }
         try {
           parsed = JSON.parse(body) as { password?: string }
+          if (!parsed || typeof parsed !== 'object') throw new Error('Invalid body')
         } catch {
           res.status(400).json({ error: 'Invalid request body' })
           return
         }
 
         const provided = typeof parsed.password === 'string' ? parsed.password : ''
-        if (!constantTimeCompare(provided, password)) {
+        if (!acceptsPassword(provided)) {
           res.status(401).json({ error: 'Invalid password' })
           return
         }
@@ -274,7 +294,7 @@ export function createAuthSession(password: string): AuthSession {
     // Handle one-click auth links like /password=<value>
     if (req.method === 'GET' && req.path.startsWith('/password=')) {
       const provided = req.path.slice('/password='.length)
-      if (constantTimeCompare(provided, password)) {
+      if (acceptsPassword(provided)) {
         const token = randomBytes(32).toString('hex')
         const expiresAt = Date.now() + SESSION_TTL_MS
         validTokens.set(token, expiresAt)
