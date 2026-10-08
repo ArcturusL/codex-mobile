@@ -58,6 +58,9 @@
 - Commit after each discrete task or sub-task.
 - Do not batch unrelated tasks into one commit.
 - Use a specific commit message describing the change.
+- 每次功能更新（含行为调整和缺陷修复）须在同一提交中递增 Codex Mobile 的 `package.json` 版本号。当前 `0.1.x` 系列的兼容改动默认递增 patch；较大或不兼容改动按范围调整版本。纯文档改动无需升版。
+- `package.json` 是 WebUI 与应用 CLI 版本的唯一来源；同步更新存在的锁文件中的应用版本，验证构建后界面与启动信息显示一致。Codex Mobile 与上游 Codex CLI 的版本分别管理，不改写历史验证记录。
+- Codex 参与的提交须保留原提交作者，并在提交消息末尾单独一段加入 `Co-authored-by: Codex <codex@openai.com>`。通过 GitHub API 创建提交或 squash/merge 时同样保留该署名，不以 PR 描述代替提交署名。
 
 ## PR Review Bots
 
