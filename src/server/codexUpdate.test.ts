@@ -1,10 +1,13 @@
 import { expect, test, vi } from 'vitest'
 import { createServer } from 'node:http'
+import * as fs from 'node:fs/promises'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { createCodexUpdater, isNewerCodexVersion, describeCodexUpdateError } from './codexUpdate'
 import { getManagedCodexCommand, resolveCodexCommand } from '../commandResolution'
+
+vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof import('node:fs/promises')>() }))
 
 const httpFetch = globalThis.fetch
 
@@ -29,6 +32,10 @@ const fs = require('node:fs'), path = require('node:path');
 const root = process.env.CODEX_HOME;
 fs.appendFileSync(path.join(root, 'installs'), '1');
 const mode = fs.readFileSync(path.join(root, 'mode'), 'utf8');
+const cache = process.argv[process.argv.indexOf('--cache') + 1];
+if (!cache || !cache.startsWith(root + path.sep)) process.exit(2);
+fs.mkdirSync(cache, { recursive: true });
+fs.writeFileSync(path.join(cache, 'download'), 'cached package');
 if (mode === 'fail') process.exit(1);
 if (mode === 'disk-full') { console.error('npm warn tar TAR_ENTRY_ERROR ENOSPC: no space left on device, write'); process.exit(0); }
 if (!process.argv.includes('@openai/codex@latest') || !process.argv.includes('--prefer-online') || !process.argv.includes('--ignore-scripts')) process.exit(2);
@@ -80,6 +87,11 @@ fs.writeFileSync(path.join(target, 'codex.js'), "console.log('codex-cli " + (mod
     await get()
     expect(registry).toHaveBeenCalledTimes(2)
     clock.mockRestore()
+    const space = vi.spyOn(fs, 'statfs').mockResolvedValue({ bavail: 256, bsize: 1024 ** 2 } as Awaited<ReturnType<typeof fs.statfs>>)
+    expect((await update()).status).toBe(202)
+    expect((await settled()).errorDetails).toContain('256 MiB available')
+    await expect(readFile(join(root, 'installs'))).rejects.toMatchObject({ code: 'ENOENT' })
+    space.mockRestore()
     expect((await update()).status).toBe(202)
     expect((await settled()).error).toMatch('update failed')
     expect(getManagedCodexCommand()).toBeNull()
@@ -107,6 +119,10 @@ fs.writeFileSync(path.join(target, 'codex.js'), "console.log('codex-cli " + (mod
     expect(complete).toMatchObject({ currentVersion: '0.155.0', latestVersion: '0.155.0', updating: false, updateAvailable: false, restartRequired: true, error: null })
     expect(await readFile(join(root, 'installs'), 'utf8')).toBe('11111')
     expect(resolveCodexCommand()).toBe(getManagedCodexCommand())
+    const runtime = join(root, 'codexui-runtime')
+    const selection = JSON.parse(await readFile(join(runtime, 'current.json'), 'utf8'))
+    expect((await fs.readdir(runtime)).filter(name => name.startsWith('install-'))).toEqual([selection.directory])
+    await expect(fs.stat(join(runtime, selection.directory, '.npm-cache'))).rejects.toMatchObject({ code: 'ENOENT' })
     updater.dispose()
     updater = createCodexUpdater()
     expect(await (await get()).json()).toMatchObject({ currentVersion: '0.155.0', restartRequired: false })
