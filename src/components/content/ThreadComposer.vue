@@ -740,7 +740,7 @@ const standaloneFileAttachments = computed(() => {
 })
 const isInteractionDisabled = computed(() => props.disabled || !props.activeThreadId)
 const isComposerConfigDisabled = computed(() => props.disabled || !props.activeThreadId)
-const isFastModeSupported = computed(() => /^(?:gpt-5\.(?:4|5|6)|gpt-6-astra)(?:$|-)/i.test(props.selectedModel.trim()))
+const isFastModeSupported = computed(() => /^(?:gpt-5\.(?:4|5|6)|gpt-6(?:-astra|-sol|-luna|\.1-sol))(?:$|-)/i.test(props.selectedModel.trim()))
 const showFastModeModelIcon = computed(() =>
   props.selectedSpeedMode === 'fast' && isFastModeSupported.value,
 )
