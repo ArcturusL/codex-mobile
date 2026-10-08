@@ -1915,3 +1915,18 @@
 :root.dark .file-change-review-button {
   @apply border-zinc-700 text-zinc-200 hover:bg-zinc-800;
 }
+
+
+.service-restart-button, .service-restart-dialog button { border: 1px solid #d4d4d8; border-radius: 6px; padding: 5px 9px; background: #fff; color: #52525b; cursor: pointer; font-size: 12px; }
+.service-restart-button:disabled, .service-restart-dialog button:disabled { opacity: .5; cursor: default; }
+.service-restart-button:focus-visible, .service-restart-dialog button:focus-visible { outline: 2px solid #71717a; outline-offset: 2px; }
+.service-restart-message { flex-basis: 100%; overflow-wrap: anywhere; }
+.service-restart-dialog { width: min(480px, calc(100vw - 40px)); margin: auto; padding: 24px; border: 1px solid #d4d4d8; border-radius: 12px; background: #fff; color: #27272a; box-shadow: 0 20px 60px #0003; }
+.service-restart-dialog::backdrop { background: #0006; }
+.service-restart-dialog h3 { margin: 0 0 12px; font-size: 17px; font-weight: 600; }
+.service-restart-dialog p { margin: 10px 0; font-size: 14px; line-height: 1.6; }
+.service-restart-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.service-restart-dialog .service-restart-danger, .service-restart-dialog [role="alert"] { color: #be123c; }
+:root.dark .service-restart-dialog { background: #18181b; border-color: #52525b; color: #e4e4e7; }
+:root.dark .service-restart-button, :root.dark .service-restart-dialog button { background: #27272a; border-color: #52525b; color: #e4e4e7; }
+:root.dark .service-restart-dialog .service-restart-danger, :root.dark .service-restart-dialog [role="alert"] { color: #fda4af; }

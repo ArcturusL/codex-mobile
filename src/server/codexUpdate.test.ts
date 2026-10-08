@@ -52,7 +52,8 @@ fs.writeFileSync(path.join(target, 'codex.js'), "console.log('codex-cli " + (mod
   const registry = vi.fn(async () => new Response(JSON.stringify({ version: '0.154.0' })))
   vi.stubGlobal('fetch', registry)
   const intervalSpy = vi.spyOn(globalThis, 'setInterval')
-  let updater = createCodexUpdater()
+  let allowInstall = true
+  let updater = createCodexUpdater(() => allowInstall)
   const server = createServer((req, res) => {
     // Same placement as the packaged server: authenticate before the updater.
     if (req.headers.authorization !== 'Bearer test') { res.writeHead(401).end(); return }
@@ -87,6 +88,10 @@ fs.writeFileSync(path.join(target, 'codex.js'), "console.log('codex-cli " + (mod
     await get()
     expect(registry).toHaveBeenCalledTimes(2)
     clock.mockRestore()
+    allowInstall = false
+    expect((await update()).status).toBe(409)
+    await expect(readFile(join(root, 'installs'))).rejects.toMatchObject({ code: 'ENOENT' })
+    allowInstall = true
     const space = vi.spyOn(fs, 'statfs').mockResolvedValue({ bavail: 256, bsize: 1024 ** 2 } as Awaited<ReturnType<typeof fs.statfs>>)
     expect((await update()).status).toBe(202)
     expect((await settled()).errorDetails).toContain('256 MiB available')

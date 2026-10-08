@@ -1,4 +1,5 @@
-import { readGlobalState, updateGlobalState } from './globalState.js'
+import { flushGlobalState, readGlobalState, updateGlobalState } from './globalState.js'
+import { createServiceRestarter } from './serviceRestart.js'
 import { mergeSessionFileChanges, readSessionFileChanges } from './sessionFileChanges'
 import { turnDiffItem } from '../shared/turnDiff'
 import { normalizePermissionMode, permissionModeParams, type PermissionMode } from '../shared/permissionMode'
@@ -6270,6 +6271,9 @@ const MERGEABLE_ITEM_TYPES = new Set([
 ])
 
 class AppServerProcess {
+  restartPending = false
+  private turnStarts = 0
+  private readonly activeTurns = new Map<string, string>()
   private process: ChildProcessWithoutNullStreams | null = null
   private initialized = false
   private initializePromise: Promise<void> | null = null
@@ -6378,6 +6382,7 @@ class AppServerProcess {
       }
 
       this.pending.clear()
+      this.activeTurns.clear()
       this.pendingServerRequests.clear()
       this.process = null
       this.initialized = false
@@ -6434,6 +6439,12 @@ class AppServerProcess {
     this.recordStreamEvent(notification)
     this.captureItemFromNotification(notification)
     const nThreadId = this.extractThreadIdFromParams(notification.params)
+    const turn = asRecord(asRecord(notification.params)?.turn)
+    if (nThreadId && notification.method === 'turn/started') {
+      this.activeTurns.set(nThreadId, readNonEmptyString(turn?.id))
+    }
+    if (nThreadId && notification.method === 'turn/completed'
+      && this.activeTurns.get(nThreadId) === readNonEmptyString(turn?.id)) this.activeTurns.delete(nThreadId)
     if (nThreadId) {
       this.invalidateLiveStateCache(nThreadId)
       this.threadTurnPageReadCacheByThreadId.delete(nThreadId)
@@ -6722,12 +6733,17 @@ class AppServerProcess {
     })
   }
 
-  private async call(method: string, params: unknown): Promise<unknown> {
+  private async call(method: string, params: unknown, timeoutMs = 0): Promise<unknown> {
     this.start()
     const id = this.nextId++
 
+    let timeout: ReturnType<typeof setTimeout> | undefined
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
+      if (timeoutMs) timeout = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new Error('Could not finish saving active conversations. Restart cancelled; please retry.'))
+      }, timeoutMs)
 
       this.sendLine({
         jsonrpc: '2.0',
@@ -6735,7 +6751,7 @@ class AppServerProcess {
         method,
         params,
       } satisfies JsonRpcCall)
-    })
+    }).finally(() => clearTimeout(timeout))
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -6767,12 +6783,52 @@ class AppServerProcess {
   }
 
   async rpc(method: string, params: unknown): Promise<unknown> {
-    this.disposeIfConfigChanged()
-    await this.ensureInitialized()
-    if (method === 'turn/start') {
-      params = await applyConfiguredServiceTier({ rpc: (name, input) => this.call(name, input) }, params)
+    const startsTurn = method === 'turn/start'
+    if (startsTurn && this.restartPending) throw new Error('Service restart pending. New messages can be sent after reconnecting.')
+    if (startsTurn) this.turnStarts++
+    try {
+      this.disposeIfConfigChanged()
+      await this.ensureInitialized()
+      if (startsTurn) {
+        params = await applyConfiguredServiceTier({ rpc: (name, input) => this.call(name, input) }, params)
+        if (this.restartPending) throw new Error('Service restart pending. New messages can be sent after reconnecting.')
+      }
+      return await this.call(method, params)
+    } finally {
+      if (startsTurn) this.turnStarts--
     }
-    return this.call(method, params)
+  }
+
+  restartActivity() {
+    return { activeThreads: this.activeTurns.size, busyRequests: this.turnStarts + this.pending.size }
+  }
+
+  async interruptForRestart(): Promise<void> {
+    const deadline = Date.now() + 10_000
+    while (this.turnStarts) {
+      if (Date.now() > deadline) throw new Error('Could not finish saving active conversations. Restart cancelled; please retry.')
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+    await Promise.all([...this.activeTurns].map(async ([threadId, turnId]) => {
+      try { await this.call('turn/interrupt', { threadId, turnId }, 10_000) }
+      catch (error) { if (this.activeTurns.has(threadId)) throw error }
+    }))
+  }
+
+  async stopForRestart(): Promise<void> {
+    const proc = this.process
+    if (!proc) return
+    // EOF lets Codex flush its own session history before the supervisor restarts the WebUI.
+    this.stopping = true
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        proc.off('exit', exited)
+        reject(new Error('Could not finish saving active conversations. Restart cancelled; please retry.'))
+      }, 15_000)
+      function exited() { clearTimeout(timeout); resolve() }
+      proc.once('exit', exited)
+      proc.stdin.end()
+    })
   }
 
   onNotification(listener: (value: { method: string; params: unknown }) => void): () => void {
@@ -6822,6 +6878,7 @@ class AppServerProcess {
     if (!this.process) return
 
     const proc = this.process
+    this.activeTurns.clear()
     this.stopping = true
     this.process = null
     this.initialized = false
@@ -6957,6 +7014,12 @@ export function generateConversationTitle(
 }
 
 export class BackendQueueProcessor {
+  private paused = false
+  get busyRequests(): number { return this.processingThreadIds.size }
+  setPaused(value: boolean): void {
+    this.paused = value
+    if (!value) void this.scheduleAllQueuedThreads()
+  }
   private readonly processingThreadIds = new Set<string>()
   private readonly queueDrainTimersByThreadId = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly queueDrainDueAtByThreadId = new Map<string, number>()
@@ -6994,7 +7057,7 @@ export class BackendQueueProcessor {
   }
 
   scheduleThreadQueueDrain(threadId: string, delayMs = 5000): void {
-    if (!threadId) return
+    if (!threadId || this.paused) return
     const normalizedDelayMs = Math.max(0, delayMs)
     const nextDueAt = Date.now() + normalizedDelayMs
     const existingDueAt = this.queueDrainDueAtByThreadId.get(threadId)
@@ -7016,10 +7079,11 @@ export class BackendQueueProcessor {
   }
 
   async processThreadQueue(threadId: string): Promise<void> {
-    if (this.processingThreadIds.has(threadId)) return
+    if (this.paused || this.processingThreadIds.has(threadId)) return
     this.processingThreadIds.add(threadId)
     try {
       const canStart = await this.canStartQueuedTurn(threadId)
+      if (this.paused) return
       if (!canStart) {
         if (await this.hasQueuedTurns(threadId)) {
           this.scheduleThreadQueueDrain(threadId)
@@ -7434,9 +7498,25 @@ async function buildThreadSearchIndex(appServer: AppServerProcess): Promise<Thre
   return { docsById }
 }
 
-export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
+export function createCodexBridgeMiddleware(restartService?: () => void): CodexBridgeMiddleware {
   const { appServer, terminalManager, methodCatalog, backendQueueProcessor } = getSharedBridgeState()
-  const codexUpdater = createCodexUpdater()
+  const codexUpdater = createCodexUpdater(() => !appServer.restartPending)
+  let writingRequests = 0
+  const restarter = createServiceRestarter({
+    restart: restartService,
+    activity: () => {
+      const activity = appServer.restartActivity()
+      return { activeThreads: activity.activeThreads, busyRequests: activity.busyRequests + writingRequests + backendQueueProcessor.busyRequests }
+    },
+    updating: codexUpdater.isUpdating,
+    drain(value) { appServer.restartPending = value; backendQueueProcessor.setPaused(value) },
+    interrupt: () => appServer.interruptForRestart(),
+    async flush() {
+      await threadQueueMutationChain
+      await flushGlobalState()
+      await appServer.stopForRestart()
+    },
+  })
   let threadSearchIndex: ThreadSearchIndex | null = null
   let threadSearchIndexPromise: Promise<ThreadSearchIndex> | null = null
 
@@ -7457,6 +7537,9 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
   void initializeSkillsSyncOnStartup(appServer)
 
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    let handlerFinished = false
+    let responseFinished = false
+    let releaseWrite: (() => void) | undefined
     const requestStartNs = process.hrtime.bigint()
     const rawUrl = req.url ?? ''
     const parsedRequestUrl = rawUrl ? new URL(rawUrl, 'http://localhost') : null
@@ -7506,6 +7589,37 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
 
       const url = new URL(req.url, 'http://localhost')
 
+      if (url.pathname === '/codex-api/service-restart') {
+        res.setHeader('Cache-Control', 'no-store')
+        if (req.method === 'GET') { setJson(res, 200, restarter.status()); return }
+        if (req.method !== 'POST') { res.setHeader('Allow', 'GET, POST'); setJson(res, 405, { error: 'Method not allowed.' }); return }
+        if (req.headers['x-codex-service-action'] !== 'restart' || req.headers['sec-fetch-site'] === 'cross-site') {
+          setJson(res, 403, { error: 'Service restarts require a same-origin request.' }); return
+        }
+        const body = asRecord(await readJsonBody(req))
+        if (!['wait', 'force', 'cancel'].includes(String(body?.action)) || body?.confirmed !== true) {
+          setJson(res, 400, { error: 'Confirm the service restart first.' }); return
+        }
+        try {
+          setJson(res, 202, restarter.request(body!.action as 'wait' | 'force' | 'cancel', true))
+        } catch (error) { setJson(res, 409, { error: getErrorMessage(error, 'Service restart failed.') }) }
+        return
+      }
+      // Freeze new writes during the final flush. Waiting still permits answers, steering and queue persistence.
+      if (restarter.status().phase === 'restarting' && url.pathname.startsWith('/codex-api/')) {
+        setJson(res, 503, { error: 'Service restart pending. New messages can be sent after reconnecting.' }); return
+      }
+      if (!['GET', 'HEAD'].includes(req.method ?? '')) {
+        writingRequests++
+        let finished = false
+        releaseWrite = () => { if (!finished && handlerFinished && responseFinished) { finished = true; writingRequests-- } }
+        const finish = () => { responseFinished = true; releaseWrite?.() }
+        res.once('finish', finish)
+        res.once('close', finish)
+      }
+      if (appServer.restartPending && req.method === 'POST' && url.pathname === '/codex-api/cli-update') {
+        setJson(res, 409, { error: 'Service restart pending. New messages can be sent after reconnecting.' }); return
+      }
       if (await codexUpdater.handle(req, res)) return
 
       if (url.pathname === '/codex-api/zen-proxy/v1/responses' && req.method === 'POST') {
@@ -9591,10 +9705,14 @@ export function createCodexBridgeMiddleware(): CodexBridgeMiddleware {
     } catch (error) {
       const message = getErrorMessage(error, 'Unknown bridge error')
       setJson(res, 502, { error: message })
+    } finally {
+      handlerFinished = true
+      releaseWrite?.()
     }
   }
 
   middleware.dispose = () => {
+    restarter.dispose()
     codexUpdater.dispose()
     threadSearchIndex = null
     terminalManager.dispose()

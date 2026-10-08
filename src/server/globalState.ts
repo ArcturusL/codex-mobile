@@ -18,6 +18,8 @@ export async function readGlobalState(path: string): Promise<Record<string, unkn
 // writers would need a cross-process lock.
 let mutation: Promise<void> = Promise.resolve()
 
+export function flushGlobalState(): Promise<void> { return mutation }
+
 export function updateGlobalState(
   path: string,
   update: (state: Record<string, unknown>) => void,

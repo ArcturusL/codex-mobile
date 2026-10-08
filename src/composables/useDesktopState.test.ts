@@ -1678,8 +1678,13 @@ describe('composer permissions', () => {
     expect(gatewayMocks.startThreadTurn.mock.calls.at(-1)?.[8]).toBe('read-only')
     expect(state.selectedPermissionMode.value).toBe('read-only')
     await state.sendMessageToSelectedThread('next inspection', [], [], 'queue')
+    await state.flushPendingQueueWrites()
     const saved = gatewayMocks.setThreadQueueState.mock.calls.at(-1)?.[0]
     expect(saved['permissions-new'][0].permissionMode).toBe('read-only')
+    const savedCount = gatewayMocks.setThreadQueueState.mock.calls.length
+    state.stopPolling()
+    await state.flushPendingQueueWrites()
+    expect(gatewayMocks.setThreadQueueState).toHaveBeenCalledTimes(savedCount)
   })
 })
 

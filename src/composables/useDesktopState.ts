@@ -4373,8 +4373,11 @@ export function useDesktopState() {
     return next
   }
 
+  let queuePersistence: Promise<void> = Promise.resolve()
   function persistQueueState(): void {
-    void setThreadQueueState(normalizeQueueStateForPersistence(queuedMessagesByThreadId.value)).catch(() => {
+    const snapshot = normalizeQueueStateForPersistence(queuedMessagesByThreadId.value)
+    queuePersistence = queuePersistence.catch(() => {}).then(async () => { await setThreadQueueState(snapshot) })
+    void queuePersistence.catch(() => {
       // Queue persistence is best-effort; keep the current in-memory queue usable.
     })
   }
@@ -5786,7 +5789,8 @@ export function useDesktopState() {
     persistedUserMessageByThreadId.value = {}
     queuedMessagesByThreadId.value = {}
     queueProcessingByThreadId.value = {}
-    persistQueueState()
+    // Disconnecting a browser must not delete the server's durable queue.
+    hasLoadedPersistedQueueState = false
     codexRateLimit.value = null
     threadTokenUsageByThreadId.value = {}
   }
@@ -5847,6 +5851,7 @@ export function useDesktopState() {
   }
 
   return {
+    flushPendingQueueWrites: () => queuePersistence,
     projectGroups,
     projectDisplayNameById,
     selectedThread,
