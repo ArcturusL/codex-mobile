@@ -2,7 +2,7 @@
 
 #### Feature/Change Name
 
-Plan mode remains scoped to the current chat. Fast mode is directly to the right of Thinking, before Permissions, and supports GPT 5.4, GPT 5.5, GPT 5.6, and GPT-6 Astra model IDs. The selected speed is saved in Codex config and applied to the next turn in existing chats and backend-drained queues.
+Plan mode remains scoped to the current chat. Fast mode is directly to the right of Thinking, before Permissions, and supports GPT 5.4, GPT 5.5, GPT 5.6, GPT-6 Astra, GPT-6 Sol, GPT-6.1 Sol, and GPT-6 Luna model IDs. The selected speed is saved in Codex config and applied to the next turn in existing chats and backend-drained queues.
 
 #### Prerequisites/Setup
 
@@ -20,7 +20,7 @@ Plan mode remains scoped to the current chat. Fast mode is directly to the right
 4. Open Start new thread, enable Plan mode, send a first message, and confirm the created thread starts in Plan mode.
 5. Return to Start new thread again and confirm Plan mode is off for the next new chat.
 6. Select `gpt-5.4` or a `gpt-5.4-*` model and confirm the Fast mode switch is visible immediately after Thinking and before Permissions without opening the add menu. Open the add menu and confirm it does not contain a duplicate Fast switch.
-7. Repeat with `gpt-5.5`, a dashed GPT 5.5 variant, `gpt-5.6-sol`, and `gpt-6-astra`.
+7. Repeat with `gpt-5.5`, a dashed GPT 5.5 variant, `gpt-5.6-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6.1-sol`, `gpt-6-luna`, and a dashed variant of each GPT-6 model.
 8. Select an unsupported model family and confirm the Fast mode switch is hidden.
 9. Focus Fast mode with the keyboard and press Space. Confirm one `config/batchWrite` request saves `features.fast_mode = true` and `service_tier = "fast"`. While saving, the switch and Send button are disabled; the switch exposes its checked/busy state.
 10. Refresh and confirm Fast remains on. Turn it off, confirm `service_tier` is cleared, refresh again, and confirm it remains off. A saved `service_tier = "priority"` must also render as Fast on.
@@ -52,5 +52,12 @@ Plan mode remains scoped to the current chat. Fast mode is directly to the right
 - Commands: `pnpm_config_verify_deps_before_run=false pnpm run build`; `node_modules/.bin/vitest run src/server/codexAppServerBridge.speed.test.ts src/server/codexAppServerBridge.archive.test.ts src/api/codexGateway.test.ts src/composables/useDesktopState.test.ts`; `pnpm_config_verify_deps_before_run=false pnpm pack --pack-destination /tmp/composer-fast-package`; `docker build -t codexapp-fast-toggle-test:20260920 /tmp/composer-fast-package`; `node output/playwright/verify-fast-mode.cjs`; `python3 output/playwright/verify-fast-requests.py`; `node output/playwright/verify-packaged-ui.cjs`. The pnpm flag preserves the compatible shared worktree dependencies.
 - One config write per click; refresh does not rewrite the setting. Each turn adds one internal `config/read` (no additional browser call, polling, fanout, or dependency). Ten packaged config-read HTTP round trips measured median 7.21 ms, max 100.71 ms including HTTP/bridge overhead; this is not a model latency benchmark.
 - Official behavior reference: [Codex speed](https://learn.chatgpt.com/docs/agent-configuration/speed). Model availability and usage rates are account/model dependent; the UI does not promise a fixed multiplier.
+
+#### Verification and performance (2026-10-08)
+
+- WebUI `0.1.89` with Codex CLI/app-server `0.161.0`: frontend typecheck/build, CLI build and packaged CLI help passed; 79 focused state, gateway and bridge tests passed.
+- The live CLI `model/list` advertises Fast service tiers for `gpt-6.1-sol`, `gpt-6-sol` and `gpt-6-luna`. The isolated candidate at `http://127.0.0.1:4203/` showed the switch for all three and retained Fast after refresh. One click saved `service_tier = "fast"` in one config write; an actual GPT-6.1 Sol turn completed and persisted. Switching back cleared the tier.
+- Chinese light and dark UI at 1440×1000: `output/playwright/fast-gpt6-light.png` and `output/playwright/fast-gpt6-dark.png` in the candidate report. No page errors. The change adds only a regex match, 23 bytes of JavaScript to the existing bundle; model-list requests, polling and config writes are unchanged.
+- Official API references: [Fast mode](https://developers.openai.com/api/docs/guides/fast-mode), [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol), [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna). Fast availability can still depend on account and region.
 
 ---
