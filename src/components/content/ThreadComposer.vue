@@ -1,5 +1,6 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit(isTurnInProgress ? activeInProgressMode : 'steer')">
+    <p v-if="isSubmitting" class="message-send-feedback" role="status">{{ t('Sending…') }}</p>
     <p v-if="dictationErrorText" class="thread-composer-dictation-error">
       {{ dictationErrorText }}
     </p>
@@ -508,10 +509,11 @@ export type ThreadComposerExposed = {
   hydrateDraft: (payload: ComposerDraftPayload) => void
   appendTextToDraft: (text: string) => void
   hasUnsavedDraft: () => boolean
+  getDraftPayload: () => ComposerDraftPayload
 }
 
 const emit = defineEmits<{
-  submit: [payload: SubmitPayload]
+  submit: [payload: SubmitPayload, settled: (accepted: boolean) => void]
   interrupt: []
   'update:selected-collaboration-mode': [mode: CollaborationModeKind]
   'update:selected-model': [modelId: string]
@@ -551,6 +553,8 @@ const PASTED_TEXT_FILE_THRESHOLD = 2000
 const PROMPT_OPTION_PREFIX = 'prompt:'
 
 const draft = ref('')
+const isSubmitting = ref(false)
+let submissionId = 0
 const selectedImages = ref<SelectedImage[]>([])
 const selectedSkills = ref<SkillItem[]>([])
 const savedPrompts = ref<ComposerPromptInfo[]>([])
@@ -717,6 +721,7 @@ const slashSuggestions = computed<SlashSuggestion[]>(() => {
 })
 
 const canSubmit = computed(() => {
+  if (isSubmitting.value) return false
   if (props.disabled) return false
   if (props.isUpdatingSpeedMode) return false
   if (!props.activeThreadId) return false
@@ -1038,20 +1043,29 @@ function buildContextUsageView(
 function onSubmit(mode: 'steer' | 'queue' = 'steer'): void {
   const text = draft.value.trim()
   if (!canSubmit.value) return
+  const contextId = props.activeThreadId
+  const submittedDraft = getCurrentDraftPayload()
+  const id = ++submissionId
+  isSubmitting.value = true
+  // Keep the draft until a recoverable conversation row or server queue owns it.
   emit('submit', {
     text,
     imageUrls: selectedImages.value.map((image) => image.url),
     fileAttachments: [...fileAttachments.value],
     skills: selectedSkills.value.map((s) => ({ name: s.name, path: s.path })),
     mode,
+  }, (accepted) => {
+    if (id === submissionId) isSubmitting.value = false
+    if (!accepted) return
+    if (contextId === props.activeThreadId && id === submissionId) {
+      if (JSON.stringify(getCurrentDraftPayload()) !== JSON.stringify(submittedDraft)) return
+      clearPersistedDraftForThread(contextId)
+      clearDraftState()
+      nextTick(() => inputRef.value?.focus())
+    } else if (JSON.stringify(loadPersistedDraftForThread(contextId)) === JSON.stringify(submittedDraft)) {
+      clearPersistedDraftForThread(contextId)
+    }
   })
-  clearPersistedDraftForThread(props.activeThreadId)
-  clearDraftState()
-  isComposerExpanded.value = false
-  folderUploadGroups.value = []
-  isAttachMenuOpen.value = false
-  closeFileMention()
-  nextTick(() => inputRef.value?.focus())
 }
 
 function setActiveInProgressMode(mode: 'steer' | 'queue'): void {
@@ -2006,6 +2020,7 @@ defineExpose<ThreadComposerExposed>({
   hydrateDraft,
   appendTextToDraft,
   hasUnsavedDraft: () => hasUnsavedDraft.value,
+  getDraftPayload: getCurrentDraftPayload,
 })
 
 onBeforeUnmount(() => {
@@ -2024,6 +2039,8 @@ onBeforeUnmount(() => {
 watch(
   () => props.activeThreadId,
   (nextThreadId) => {
+    submissionId += 1
+    isSubmitting.value = false
     cancelDictation()
     if (lastActiveThreadId) {
       persistDraftForThread(lastActiveThreadId, getCurrentDraftPayload())

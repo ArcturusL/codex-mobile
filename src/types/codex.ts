@@ -100,7 +100,7 @@ export type CommandExecutionData = {
   exitCode: number | null
 }
 
-export type UiFileAttachment = { label: string; path: string }
+export type UiFileAttachment = { label: string; path: string; fsPath?: string }
 export type UiFileChangeOperation = 'add' | 'delete' | 'update'
 export type UiFileChangeStatus = 'inProgress' | 'completed' | 'failed' | 'declined'
 export type UiFileChange = {
@@ -208,6 +208,9 @@ export type UiPlanData = {
 export type UiMessage = {
   id: string
   createdAtIso?: string
+  deliveryState?: 'sending' | 'sent' | 'failed'
+  deliveryError?: string
+  deliveryBaselineIds?: string[]
   role: 'user' | 'assistant' | 'system'
   text: string
   images?: string[]

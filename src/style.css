@@ -1944,3 +1944,23 @@
 
 .message-timestamp[data-role='user'] { text-align: right; }
 :root.dark .message-timestamp { color: #94a3b8; }
+
+.message-delivery {
+  width: 100%;
+  max-width: min(var(--chat-column-max, 45rem), 100%);
+  margin: 4px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  color: #64748b;
+  font-size: 12px;
+  text-align: right;
+  user-select: text;
+}
+.message-delivery-error { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 6rem; overflow: auto; }
+.message-delivery button { margin-left: 12px; text-decoration: underline; cursor: pointer; }
+.message-delivery[data-state='failed'] { color: #b45309; }
+.message-send-feedback { color: #64748b; font-size: 12px; margin: 0 0 4px; }
+:root.dark .message-delivery, :root.dark .message-send-feedback { color: #94a3b8; }
+:root.dark .message-delivery[data-state='failed'] { color: #fbbf24; }

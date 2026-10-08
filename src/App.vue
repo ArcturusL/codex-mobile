@@ -948,6 +948,7 @@
                     :load-earlier-messages="loadOlderMessages"
                     @fork-thread="onForkThreadFromMessage"
                     @rollback="onRollback"
+                    @restore-message="onRestorePendingMessage"
                     @implement-plan="onImplementPlan"
                     @respond-server-request="onRespondServerRequest" />
                 </div>
@@ -3136,7 +3137,7 @@ function onWindowFocus(): void {
   }
 }
 
-function onSubmitThreadMessage(payload: { text: string; imageUrls: string[]; fileAttachments: Array<{ label: string; path: string; fsPath: string }>; skills: Array<{ name: string; path: string }>; mode: 'steer' | 'queue' }): void {
+async function onSubmitThreadMessage(payload: { text: string; imageUrls: string[]; fileAttachments: Array<{ label: string; path: string; fsPath: string }>; skills: Array<{ name: string; path: string }>; mode: 'steer' | 'queue' }, settled: (accepted: boolean) => void): Promise<void> {
   const text = payload.text
   const editingState = editingQueuedMessageState.value
   const queueInsertIndex =
@@ -3146,11 +3147,32 @@ function onSubmitThreadMessage(payload: { text: string; imageUrls: string[]; fil
       ? editingState.queueIndex
       : undefined
   editingQueuedMessageState.value = null
-  if (isHomeRoute.value) {
-    void submitFirstMessageForNewThread(text, payload.imageUrls, payload.skills, payload.fileAttachments)
-    return
+  let accepted = false
+  try {
+    if (isHomeRoute.value) {
+      accepted = await submitFirstMessageForNewThread(text, payload.imageUrls, payload.skills, payload.fileAttachments)
+    } else {
+      await sendMessageToSelectedThread(text, payload.imageUrls, payload.skills, payload.mode, payload.fileAttachments, queueInsertIndex)
+      accepted = true
+    }
+  } catch (error) {
+    desktopError.value = error instanceof Error ? error.message : t('Send not confirmed')
+  } finally {
+    settled(accepted)
   }
-  void sendMessageToSelectedThread(text, payload.imageUrls, payload.skills, payload.mode, payload.fileAttachments, queueInsertIndex)
+}
+
+function onRestorePendingMessage(messageId: string): void {
+  const message = messages.value.find(m => m.id === messageId && m.deliveryState === 'failed')
+  const composer = threadComposerRef.value
+  if (!message || !composer) return
+  const payload: ComposerDraftPayload = { text: message.text, imageUrls: message.images ?? [],
+    skills: message.skills ?? [], fileAttachments: (message.fileAttachments ?? []).map(file => ({ ...file, fsPath: file.fsPath ?? file.path })) }
+  if (composer.hasUnsavedDraft() && JSON.stringify(composer.getDraftPayload()) !== JSON.stringify(payload)
+    && !window.confirm(t('Replace the current draft with this message?'))) return
+  composer.hydrateDraft(payload)
+  // The old recovery row remains until a confirmed history message replaces it.
+  // Reuse that row on the next send, instead of deleting the only persisted copy.
 }
 
 function onEditQueuedMessage(messageId: string): void {
@@ -3899,7 +3921,7 @@ function onRollback(payload: { turnId: string }): void {
 function onImplementPlan(payload: { turnId: string }): void {
   if (isHomeRoute.value || !selectedThreadId.value) return
   setSelectedCollaborationMode('default')
-  void sendMessageToSelectedThread('Implement', [], [], 'steer', [], undefined, 'default')
+  void sendMessageToSelectedThread('Implement', [], [], 'steer', [], undefined, 'default').catch(() => {})
 }
 
 
@@ -4572,7 +4594,7 @@ async function submitFirstMessageForNewThread(
   imageUrls: string[] = [],
   skills: Array<{ name: string; path: string }> = [],
   fileAttachments: Array<{ label: string; path: string; fsPath: string }> = [],
-): Promise<void> {
+): Promise<boolean> {
   try {
     worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
     let targetCwd = newThreadCwd.value
@@ -4593,7 +4615,7 @@ async function submitFirstMessageForNewThread(
           title: t('Worktree setup failed'),
           message: t('Unable to create worktree. Try again or switch to Local project.'),
         }
-        return
+        return false
       }
     } else if (!targetCwd.trim()) {
       const directory = await createProjectlessThreadDirectory(text)
@@ -4601,10 +4623,12 @@ async function submitFirstMessageForNewThread(
       newThreadCwd.value = directory.cwd
     }
     const threadId = await sendMessageToNewThread(text, targetCwd, imageUrls, skills, fileAttachments)
-    if (!threadId) return
+    if (!threadId) return false
     await router.replace({ name: 'thread', params: { threadId } })
-  } catch {
-    // Error is already reflected in state.
+    return true
+  } catch (error) {
+    desktopError.value = error instanceof Error ? error.message : t('Send not confirmed')
+    return false
   }
 }
 

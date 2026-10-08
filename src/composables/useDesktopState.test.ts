@@ -120,6 +120,119 @@ describe('composer Fast mode', () => {
   })
 })
 
+describe('pending user message recovery', () => {
+  const storageKey = 'codex-web-local.pending-user-messages.v1'
+  const oldMessage: UiMessage = { id: 'older-user', role: 'user', text: 'repeat', messageType: 'userMessage',
+    turnId: 'old-turn', createdAtIso: '2026-01-01T00:00:00.000Z' }
+  const detail = (messages: UiMessage[] = [oldMessage], inProgress = false) => ({
+    messages, inProgress, activeTurnId: inProgress ? 'running-turn' : '', turnIndexByTurnId: {},
+    model: 'gpt-6.1-sol', modelProvider: 'openai', hasMoreOlder: false,
+  })
+  async function setup(inProgress = false) {
+    installTestWindow()
+    gatewayMocks.resumeThread.mockResolvedValue(detail([oldMessage], inProgress))
+    gatewayMocks.getThreadDetail.mockResolvedValue(detail([oldMessage], inProgress))
+    const state = useDesktopState()
+    state.primeSelectedThread('recovery-thread')
+    await state.loadMessages('recovery-thread')
+    return state
+  }
+
+  it('shows the row before acknowledgement and retains a failed repeated prompt across refresh', async () => {
+    const state = await setup()
+    let reject!: (error: Error) => void
+    gatewayMocks.startThreadTurn.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
+    const images = ['/codex-local-image?path=%2Ftmp%2Fa.png']
+    const skills = [{ name: 'skill', path: '/tmp/SKILL.md' }]
+    const files = [{ label: 'a.txt', path: 'a.txt', fsPath: '/tmp/a.txt' }]
+    const sending = state.sendMessageToSelectedThread('repeat', images, skills, 'steer', files)
+    await Promise.resolve()
+    const row = state.messages.value.at(-1)!
+    expect(row).toMatchObject({ text: 'repeat', deliveryState: 'sending', images, skills, fileAttachments: files })
+    expect(JSON.parse(window.localStorage.getItem(storageKey)!)).toHaveProperty('recovery-thread')
+    reject(new Error('Network disconnected'))
+    await expect(sending).rejects.toThrow('Network disconnected')
+    expect(state.messages.value.at(-1)).toMatchObject({ id: row.id, deliveryState: 'failed', deliveryError: 'Network disconnected' })
+    const reloaded = useDesktopState()
+    reloaded.primeSelectedThread('recovery-thread')
+    await reloaded.loadMessages('recovery-thread')
+    expect(reloaded.messages.value.map(m => m.id)).toEqual(['older-user', row.id])
+    expect(reloaded.messages.value.at(-1)?.fileAttachments).toEqual(files)
+  })
+
+  it('reuses a failed row when resending, then replaces only that row with confirmed history', async () => {
+    const state = await setup()
+    gatewayMocks.startThreadTurn.mockRejectedValueOnce(new Error('offline'))
+    await expect(state.sendMessageToSelectedThread('repeat')).rejects.toThrow('offline')
+    const id = state.messages.value.at(-1)!.id
+    let finish!: (turnId: string) => void
+    gatewayMocks.startThreadTurn.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const sending = state.sendMessageToSelectedThread('repeat')
+    await Promise.resolve()
+    expect(state.messages.value.filter(m => m.messageType === 'userMessage.optimistic')).toHaveLength(1)
+    expect(state.messages.value.at(-1)).toMatchObject({ id, deliveryState: 'sending' })
+    finish('new-turn')
+    await sending
+    gatewayMocks.getThreadDetail.mockResolvedValue(detail([oldMessage, { ...oldMessage, id: 'new-user', turnId: 'new-turn', createdAtIso: new Date().toISOString() }]))
+    await state.loadMessages('recovery-thread', { force: true })
+    expect(state.messages.value.map(m => m.id)).toEqual(['older-user', 'new-user'])
+    expect(window.localStorage.getItem(storageKey)).toBeNull()
+  })
+
+  it('reconciles a lost acknowledgement without resending the mutation', async () => {
+    const state = await setup()
+    gatewayMocks.startThreadTurn.mockRejectedValueOnce(new Error('response lost'))
+    await expect(state.sendMessageToSelectedThread('repeat')).rejects.toThrow('response lost')
+    gatewayMocks.getThreadDetail.mockResolvedValue(detail([oldMessage, { ...oldMessage, id: 'accepted-user', turnId: 'new-turn', createdAtIso: new Date().toISOString() }]))
+    await state.loadMessages('recovery-thread', { force: true })
+    expect(state.messages.value.map(m => m.id)).toEqual(['older-user', 'accepted-user'])
+    expect(gatewayMocks.startThreadTurn).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a failed steer visible while the original turn stays active', async () => {
+    const state = await setup(true)
+    gatewayMocks.startThreadTurn.mockRejectedValueOnce(new Error('offline steer'))
+    await expect(state.sendMessageToSelectedThread('steer this')).rejects.toThrow('offline steer')
+    expect(state.messages.value.at(-1)).toMatchObject({ text: 'steer this', deliveryState: 'failed' })
+    gatewayMocks.setThreadQueueState.mockResolvedValue(undefined)
+    await state.sendMessageToSelectedThread('next queued', [], [], 'queue')
+    expect(state.selectedThreadQueuedMessages.value).toHaveLength(1)
+    expect(gatewayMocks.startThreadTurn).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports queue save failure instead of accepting and discarding the draft', async () => {
+    const state = await setup(true)
+    gatewayMocks.setThreadQueueState.mockRejectedValueOnce(new Error('queue offline'))
+    await expect(state.sendMessageToSelectedThread('queued text', [], [], 'queue')).rejects.toThrow('queue offline')
+    expect(state.selectedThreadQueuedMessages.value).toEqual([])
+  })
+
+  it('keeps one recovery copy if an automatic model fallback cannot send', async () => {
+    const state = await setup()
+    let notify!: (event: unknown) => void
+    gatewayMocks.subscribeCodexNotifications.mockImplementation(handler => { notify = handler; return vi.fn() })
+    gatewayMocks.startThreadTurn.mockResolvedValueOnce('first-turn').mockRejectedValueOnce(new Error('fallback offline'))
+    gatewayMocks.rollbackThread.mockResolvedValueOnce([oldMessage])
+    gatewayMocks.getThreadDetail.mockResolvedValue(detail([oldMessage], true))
+    await state.sendMessageToSelectedThread('repeat')
+    state.startPolling()
+    notify({ method: 'turn/completed', params: { threadId: 'recovery-thread', turn: {
+      id: 'first-turn', status: 'failed', error: { message: 'model is not supported' },
+    } } })
+    await vi.waitFor(() => expect(gatewayMocks.startThreadTurn).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(state.messages.value.filter(m => m.deliveryState === 'failed')).toHaveLength(1))
+    expect(state.messages.value.filter(m => m.messageType === 'userMessage.optimistic')).toHaveLength(1)
+    state.stopPolling()
+  })
+
+  it('does not issue a turn when the local recovery copy cannot be saved', async () => {
+    const state = await setup()
+    vi.mocked(window.localStorage.setItem).mockImplementation((key) => { if (key === storageKey) throw new Error('quota') })
+    await expect(state.sendMessageToSelectedThread('keep my draft')).rejects.toThrow('Could not save the message locally')
+    expect(gatewayMocks.startThreadTurn).not.toHaveBeenCalled()
+  })
+})
+
 describe('filterGroupsByWorkspaceRoots', () => {
   it('keeps projectless chats visible when workspace roots are configured', () => {
     const groups: UiProjectGroup[] = [

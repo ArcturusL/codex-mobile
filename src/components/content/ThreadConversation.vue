@@ -1,6 +1,6 @@
 <template>
   <section class="conversation-root" @contextmenu.capture="onConversationContextMenu">
-    <p v-if="isLoading" class="conversation-loading">Loading messages...</p>
+    <p v-if="isLoading && messages.length === 0" class="conversation-loading">Loading messages...</p>
 
     <p
       v-else-if="messages.length === 0 && pendingRequests.length === 0 && !liveOverlay"
@@ -774,6 +774,15 @@
           :value="message.createdAtIso"
           :data-role="message.role"
         />
+        <div v-if="message.deliveryState" class="message-delivery" :data-state="message.deliveryState" role="status">
+          <span>{{ t(message.deliveryState === 'sending' ? 'Sending…' : message.deliveryState === 'sent' ? 'Sent; waiting for history' : 'Send not confirmed') }}</span>
+          <span v-if="message.deliveryError" class="message-delivery-error">{{ message.deliveryError }}</span>
+          <span v-if="message.deliveryState === 'failed'">{{ t('Your message is kept here. Check for a reply before sending again.') }}</span>
+          <div>
+            <button type="button" @click="copyPendingMessage(message)">{{ t(copiedResponseAnchorId === message.id ? 'Copied' : 'Copy message') }}</button>
+            <button v-if="message.deliveryState === 'failed'" type="button" @click="emit('restoreMessage', message.id)">{{ t('Restore to composer') }}</button>
+          </div>
+        </div>
       </li>
       </template>
       <li v-if="liveOverlay" class="conversation-item conversation-item-overlay">
@@ -934,6 +943,9 @@ import IconTablerFilePencil from '../icons/IconTablerFilePencil.vue'
 import IconTablerGitFork from '../icons/IconTablerGitFork.vue'
 import IconTablerX from '../icons/IconTablerX.vue'
 import MessageTimestamp from './MessageTimestamp.vue'
+import { useUiLanguage } from '../../composables/useUiLanguage'
+
+const { t } = useUiLanguage()
 
 type HighlightJsModule = (typeof import('highlight.js/lib/common'))['default']
 
@@ -1346,6 +1358,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  restoreMessage: [messageId: string]
   forkThread: [payload: { threadId: string; turnIndex: number }]
   rollback: [payload: { turnId: string }]
   implementPlan: [payload: { turnId: string }]
@@ -1356,6 +1369,11 @@ const conversationListRef = ref<HTMLElement | null>(null)
 const bottomAnchorRef = ref<HTMLElement | null>(null)
 const modalImageUrl = ref('')
 const copiedResponseAnchorId = ref('')
+async function copyPendingMessage(message: UiMessage): Promise<void> {
+  try { await copyTextToClipboard(message.text) }
+  catch { if (!copyTextWithSelectionFallback(message.text)) return }
+  copiedResponseAnchorId.value = message.id
+}
 const fileChangeActionState = ref<Record<string, 'idle' | 'undoing' | 'redoing' | 'undone' | 'redone'>>({})
 const fileChangeActionError = ref<Record<string, string>>({})
 const fileChangeRedoPatchIds = ref<Record<string, string[]>>({})
