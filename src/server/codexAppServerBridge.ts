@@ -1,3 +1,4 @@
+import { mergeSessionMessageTimestamps, readSessionMessageTimestamps } from './sessionMessageTimestamps'
 import { flushGlobalState, readGlobalState, updateGlobalState } from './globalState.js'
 import { createServiceRestarter } from './serviceRestart.js'
 import { mergeSessionFileChanges, readSessionFileChanges } from './sessionFileChanges'
@@ -273,6 +274,7 @@ type SessionSkillInputCacheEntry = {
   mtimeMs: number
   skillsByTurnId: Map<string, SessionRecoveredSkillInput[]>
   fileChangesByTurnId: Map<string, Record<string, unknown>[]>
+  messageTimestamps: Map<string, string>
 }
 
 const SESSION_SKILL_INPUT_CACHE_LIMIT = 64
@@ -348,6 +350,7 @@ async function readCachedSessionHistory(sessionPath: string): Promise<SessionSki
     mtimeMs: sessionStat.mtimeMs,
     skillsByTurnId,
     fileChangesByTurnId: readSessionFileChanges(sessionLogRaw),
+    messageTimestamps: readSessionMessageTimestamps(sessionLogRaw),
   }
   sessionSkillInputCache.set(sessionPath, entry)
   if (sessionSkillInputCache.size > SESSION_SKILL_INPUT_CACHE_LIMIT) {
@@ -437,9 +440,9 @@ async function mergeSessionHistoryIntoThreadResult(result: unknown): Promise<unk
 
   try {
     const cached = await readCachedSessionHistory(sessionPath)
-    const mergedTurns = mergeSessionFileChanges(
+    const mergedTurns = mergeSessionMessageTimestamps(mergeSessionFileChanges(
       mergeSessionSkillInputsIntoTurnsFromMap(turns, cached.skillsByTurnId), cached.fileChangesByTurnId,
-    )
+    ), cached.messageTimestamps)
     if (mergedTurns === turns) return result
     return {
       ...record,
@@ -8275,6 +8278,7 @@ export function createCodexBridgeMiddleware(restartService?: () => void): CodexB
             try {
               const sessionLogRaw = await readFile(sessionPath, 'utf8')
               turns = mergeSessionFileChanges(mergeSessionCommandsIntoTurns(turns, sessionLogRaw), readSessionFileChanges(sessionLogRaw))
+              turns = mergeSessionMessageTimestamps(turns, readSessionMessageTimestamps(sessionLogRaw))
             } catch {
               // Session log not available — continue without command recovery
             }

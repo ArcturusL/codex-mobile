@@ -1,4 +1,5 @@
 import { turnDiffMessage } from '../shared/turnDiff'
+import { toMessageTimestamp } from '../shared/messageTimestamp'
 import { normalizePermissionMode, type PermissionMode } from '../shared/permissionMode'
 import { computed, ref, watch } from 'vue'
 import {
@@ -642,6 +643,7 @@ function isUnsupportedChatGptModelError(error: unknown): boolean {
 function areMessageFieldsEqual(first: UiMessage, second: UiMessage): boolean {
   return (
     first.id === second.id &&
+    first.createdAtIso === second.createdAtIso &&
     first.role === second.role &&
     first.text === second.text &&
     areStringArraysEqual(first.images, second.images) &&
@@ -796,6 +798,10 @@ function removePersistedLiveMessages(previous: UiMessage[], incoming: UiMessage[
 
 function upsertMessage(previous: UiMessage[], nextMessage: UiMessage): UiMessage[] {
   const existingIndex = previous.findIndex((message) => message.id === nextMessage.id)
+  nextMessage = {
+    ...nextMessage,
+    createdAtIso: previous[existingIndex]?.createdAtIso ?? nextMessage.createdAtIso ?? new Date().toISOString(),
+  }
   if (existingIndex < 0) {
     return [...previous, nextMessage]
   }
@@ -2619,6 +2625,7 @@ export function useDesktopState() {
       skills: skills.length > 0 ? skills.map((skill) => ({ name: skill.name, path: skill.path })) : undefined,
       fileAttachments: fileAttachments.length > 0 ? fileAttachments.map((file) => ({ ...file })) : undefined,
       messageType: 'userMessage.optimistic',
+      createdAtIso: new Date().toISOString(),
     }
     setPersistedMessagesForThread(threadId, [...existing, nextMessage])
   }
@@ -4005,7 +4012,7 @@ export function useDesktopState() {
 
     const completedAgentMessage = readAgentMessageCompleted(notification)
     if (notificationThreadId && completedAgentMessage) {
-      upsertLiveAgentMessage(notificationThreadId, completedAgentMessage)
+      upsertLiveAgentMessage(notificationThreadId, { ...completedAgentMessage, createdAtIso: toMessageTimestamp(notification.atIso) })
     }
 
     if (!notificationThreadId || notificationThreadId !== selectedThreadId.value) return
@@ -4026,12 +4033,13 @@ export function useDesktopState() {
         role: 'assistant',
         text: nextText,
         messageType: 'agentMessage.live',
+        createdAtIso: toMessageTimestamp(notification.atIso),
       })
     }
 
     const completedImageView = readCompletedImageView(notification)
     if (completedImageView) {
-      upsertLiveAgentMessage(notificationThreadId, completedImageView)
+      upsertLiveAgentMessage(notificationThreadId, { ...completedImageView, createdAtIso: toMessageTimestamp(notification.atIso) })
 
     }
 

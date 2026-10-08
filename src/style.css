@@ -1930,3 +1930,17 @@
 :root.dark .service-restart-dialog { background: #18181b; border-color: #52525b; color: #e4e4e7; }
 :root.dark .service-restart-button, :root.dark .service-restart-dialog button { background: #27272a; border-color: #52525b; color: #e4e4e7; }
 :root.dark .service-restart-dialog .service-restart-danger, :root.dark .service-restart-dialog [role="alert"] { color: #fda4af; }
+
+:root .message-timestamp {
+  display: block;
+  width: 100%;
+  max-width: min(var(--chat-column-max, 45rem), 100%);
+  margin: 4px auto 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.message-timestamp[data-role='user'] { text-align: right; }
+:root.dark .message-timestamp { color: #94a3b8; }
