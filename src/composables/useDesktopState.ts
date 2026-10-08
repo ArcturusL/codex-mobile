@@ -1,5 +1,6 @@
 import { turnDiffMessage } from '../shared/turnDiff'
 import { toMessageTimestamp } from '../shared/messageTimestamp'
+import { restorePendingUserMessages, savePendingUserMessages } from './pendingUserMessages'
 import { normalizePermissionMode, type PermissionMode } from '../shared/permissionMode'
 import { computed, ref, watch } from 'vue'
 import {
@@ -644,6 +645,8 @@ function areMessageFieldsEqual(first: UiMessage, second: UiMessage): boolean {
   return (
     first.id === second.id &&
     first.createdAtIso === second.createdAtIso &&
+    first.deliveryState === second.deliveryState &&
+    first.deliveryError === second.deliveryError &&
     first.role === second.role &&
     first.text === second.text &&
     areStringArraysEqual(first.images, second.images) &&
@@ -690,6 +693,7 @@ function mergeMessages(
     return areMessageArraysEqual(previous, mergedIncoming) ? previous : mergedIncoming
   }
 
+  const matchedUserIds = new Set<string>()
   const mergedFromPrevious = previous
     .map((previousMessage) => {
       const nextMessage = incomingById.get(previousMessage.id)
@@ -701,11 +705,20 @@ function mergeMessages(
       }
       return nextMessage
     })
-    .filter((message) => !isOptimisticUserMessage(message) || !hasEquivalentUserMessage(message, incoming))
+    .filter((message) => !isOptimisticUserMessage(message) || !hasEquivalentUserMessage(message, incoming, matchedUserIds))
 
   const previousIdSet = new Set(previous.map((message) => message.id))
   const appended = mergedIncoming.filter((message) => !previousIdSet.has(message.id))
   const merged = [...mergedFromPrevious, ...appended]
+  // Restored local rows must follow older history and precede their own reply.
+  for (const pending of merged.filter(isOptimisticUserMessage)) {
+    const previousIndex = merged.indexOf(pending)
+    merged.splice(previousIndex, 1)
+    let index = merged.findIndex(message => (pending.turnId && message.turnId === pending.turnId)
+      || (message.createdAtIso && pending.createdAtIso && message.createdAtIso > pending.createdAtIso))
+    if (index < 0) index = pending.deliveryBaselineIds?.length ? merged.length : Math.min(previousIndex, merged.length)
+    merged.splice(index, 0, pending)
+  }
 
   return areMessageArraysEqual(previous, merged) ? previous : merged
 }
@@ -744,15 +757,17 @@ function hasOptimisticUserMessages(messages: UiMessage[]): boolean {
   return messages.some(isOptimisticUserMessage)
 }
 
-function hasEquivalentUserMessage(target: UiMessage, messages: UiMessage[]): boolean {
+function hasEquivalentUserMessage(target: UiMessage, messages: UiMessage[], matchedIds = new Set<string>()): boolean {
   if (target.role !== 'user') return false
   const targetText = normalizeMessageText(target.text)
   const targetImages = Array.isArray(target.images) ? target.images : []
   const targetFileCount = Array.isArray(target.fileAttachments) ? target.fileAttachments.length : 0
   const targetSkillCount = Array.isArray(target.skills) ? target.skills.length : 0
 
-  return messages.some((message) => {
+  const match = messages.find((message) => {
     if (message === target || message.role !== 'user' || isOptimisticUserMessage(message)) return false
+    if (matchedIds.has(message.id) || target.deliveryBaselineIds?.includes(message.id)) return false
+    if (target.turnId && message.turnId && message.turnId !== target.turnId) return false
     const messageText = normalizeMessageText(message.text)
     const messageImages = Array.isArray(message.images) ? message.images : []
     const messageFileCount = Array.isArray(message.fileAttachments) ? message.fileAttachments.length : 0
@@ -764,6 +779,8 @@ function hasEquivalentUserMessage(target: UiMessage, messages: UiMessage[]): boo
       messageSkillCount === targetSkillCount
     )
   })
+  if (match) matchedIds.add(match.id)
+  return Boolean(match)
 }
 
 function removeRedundantLiveAgentMessages(previous: UiMessage[], incoming: UiMessage[]): UiMessage[] {
@@ -1429,7 +1446,7 @@ export function useDesktopState() {
   const projectGroups = ref<UiProjectGroup[]>([])
   const sourceGroups = ref<UiProjectGroup[]>([])
   const selectedThreadId = ref(loadSelectedThreadId())
-  const persistedMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
+  const persistedMessagesByThreadId = ref<Record<string, UiMessage[]>>(restorePendingUserMessages())
   const livePlanMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveAgentMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveReasoningTextByThreadId = ref<Record<string, string>>({})
@@ -1447,6 +1464,7 @@ export function useDesktopState() {
     collaborationMode: CollaborationModeKind
   }
   type PendingTurnRequest = {
+    messageId?: string
     permissionMode?: PermissionMode
     text: string
     imageUrls: string[]
@@ -1938,12 +1956,18 @@ export function useDesktopState() {
       fallbackRetried: true,
     })
 
+    let recoveryMessageId = ''
     try {
+      recoveryMessageId = (persistedMessagesByThreadId.value[threadId] ?? []).some(m => m.id === pending.messageId)
+        ? pending.messageId!
+        : appendOptimisticUserMessage(threadId, pending.text, pending.imageUrls, pending.skills, pending.fileAttachments)
+      updateMessageDelivery(threadId, recoveryMessageId, { deliveryState: 'sending', deliveryError: undefined, turnId: undefined })
       await applyFallbackModelSelection(threadId)
       // Remove the failed user turn before replaying on fallback model to avoid duplicated user messages.
       try {
         const rolledBackMessages = await rollbackThread(threadId, 1)
-        setPersistedMessagesForThread(threadId, rolledBackMessages)
+        setPersistedMessagesForThread(threadId, [...rolledBackMessages,
+          ...(persistedMessagesByThreadId.value[threadId] ?? []).filter(isOptimisticUserMessage)])
         clearLivePlansForThread(threadId)
         setLiveAgentMessagesForThread(threadId, [])
         clearLiveReasoningForThread(threadId)
@@ -1976,7 +2000,7 @@ export function useDesktopState() {
         }
       }
 
-      await startThreadTurn(
+      const retriedTurnId = await startThreadTurn(
         threadId,
         pending.text,
         pending.imageUrls,
@@ -1987,12 +2011,14 @@ export function useDesktopState() {
         pending.collaborationMode,
         ...(pending.permissionMode ? [pending.permissionMode] as const : []),
       )
+      updateMessageDelivery(threadId, recoveryMessageId, { deliveryState: 'sent', turnId: retriedTurnId || undefined })
 
       scheduleRateLimitRefresh()
       pendingThreadMessageRefresh.add(threadId)
       await syncFromNotifications()
     } catch (unknownError) {
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
+      if (recoveryMessageId) updateMessageDelivery(threadId, recoveryMessageId, { deliveryState: 'failed', deliveryError: errorMessage })
       setTurnErrorForThread(threadId, errorMessage)
       error.value = errorMessage
       setThreadInProgress(threadId, false)
@@ -2301,6 +2327,9 @@ export function useDesktopState() {
 
   function pruneThreadScopedState(flatThreads: UiThread[]): void {
     const activeThreadIds = new Set(flatThreads.map((thread) => thread.id))
+    for (const [id, messages] of Object.entries(persistedMessagesByThreadId.value)) {
+      if (hasOptimisticUserMessages(messages)) activeThreadIds.add(id)
+    }
     const currentThreadId = selectedThreadId.value.trim()
     if (currentThreadId) {
       activeThreadIds.add(currentThreadId)
@@ -2603,6 +2632,10 @@ export function useDesktopState() {
     nextMessages = orderTurnActivitySummaries(nextMessages)
     const previous = persistedMessagesByThreadId.value[threadId] ?? []
     if (areMessageArraysEqual(previous, nextMessages)) return
+    const pending = nextMessages.filter(isOptimisticUserMessage)
+    if (!areMessageArraysEqual(previous.filter(isOptimisticUserMessage), pending)) {
+      savePendingUserMessages(threadId, pending)
+    }
     persistedMessagesByThreadId.value = {
       ...persistedMessagesByThreadId.value,
       [threadId]: nextMessages,
@@ -2615,19 +2648,34 @@ export function useDesktopState() {
     imageUrls: string[] = [],
     skills: Array<{ name: string; path: string }> = [],
     fileAttachments: FileAttachment[] = [],
-  ): void {
+  ): string {
     const existing = persistedMessagesByThreadId.value[threadId] ?? []
+    const retry = existing.find(message => message.deliveryState === 'failed'
+      && message.text === text
+      && JSON.stringify(message.images ?? []) === JSON.stringify(imageUrls)
+      && JSON.stringify(message.skills ?? []) === JSON.stringify(skills)
+      && JSON.stringify(message.fileAttachments ?? []) === JSON.stringify(fileAttachments))
     const nextMessage: UiMessage = {
-      id: `optimistic-user:${threadId}:${Date.now()}`,
+      id: retry?.id ?? `optimistic-user:${threadId}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
       role: 'user',
       text,
       images: imageUrls.length > 0 ? [...imageUrls] : undefined,
       skills: skills.length > 0 ? skills.map((skill) => ({ name: skill.name, path: skill.path })) : undefined,
       fileAttachments: fileAttachments.length > 0 ? fileAttachments.map((file) => ({ ...file })) : undefined,
       messageType: 'userMessage.optimistic',
-      createdAtIso: new Date().toISOString(),
+      createdAtIso: retry?.createdAtIso ?? new Date().toISOString(),
+      deliveryState: 'sending',
+      deliveryBaselineIds: existing.filter(m => m.role === 'user' && !isOptimisticUserMessage(m)).map(m => m.id),
     }
-    setPersistedMessagesForThread(threadId, [...existing, nextMessage])
+    setPersistedMessagesForThread(threadId, retry
+      ? existing.map(message => message.id === retry.id ? nextMessage : message)
+      : [...existing, nextMessage])
+    return nextMessage.id
+  }
+
+  function updateMessageDelivery(threadId: string, id: string, fields: Partial<UiMessage>): void {
+    const messages = persistedMessagesByThreadId.value[threadId] ?? []
+    setPersistedMessagesForThread(threadId, messages.map(m => m.id === id ? { ...m, ...fields } : m))
   }
 
   function setLiveAgentMessagesForThread(threadId: string, nextMessages: UiMessage[]): void {
@@ -3923,6 +3971,8 @@ export function useDesktopState() {
     const shouldRetryWithFallback =
       Boolean(completedThreadId) &&
       Boolean(turnErrorMessage) &&
+      Boolean(pendingTurnRequestByThreadId.value[completedThreadId]) &&
+      !pendingTurnRequestByThreadId.value[completedThreadId]?.fallbackRetried &&
       completedThreadModelId !== MODEL_FALLBACK_ID &&
       isUnsupportedChatGptModelError(new Error(turnErrorMessage))
     if (completedTurn) {
@@ -3952,7 +4002,7 @@ export function useDesktopState() {
       if (activeTurnIdByThreadId.value[completedTurn.threadId]) {
         activeTurnIdByThreadId.value = omitKey(activeTurnIdByThreadId.value, completedTurn.threadId)
       }
-      setThreadInProgress(completedTurn.threadId, false)
+      if (!shouldRetryWithFallback) setThreadInProgress(completedTurn.threadId, false)
       setTurnActivityForThread(completedTurn.threadId, null)
       markThreadUnreadByEvent(completedTurn.threadId)
       if (!shouldRetryWithFallback) {
@@ -4149,7 +4199,7 @@ export function useDesktopState() {
       const completedThreadId = extractThreadIdFromNotification(notification)
       if (completedThreadId) {
         clearDelayedTurnSync(completedThreadId)
-        setThreadInProgress(completedThreadId, false)
+        if (!shouldRetryWithFallback) setThreadInProgress(completedThreadId, false)
         setTurnActivityForThread(completedThreadId, null)
         markThreadUnreadByEvent(completedThreadId)
         if (!shouldRetryWithFallback) {
@@ -4382,12 +4432,13 @@ export function useDesktopState() {
   }
 
   let queuePersistence: Promise<void> = Promise.resolve()
-  function persistQueueState(): void {
+  function persistQueueState(): Promise<void> {
     const snapshot = normalizeQueueStateForPersistence(queuedMessagesByThreadId.value)
     queuePersistence = queuePersistence.catch(() => {}).then(async () => { await setThreadQueueState(snapshot) })
     void queuePersistence.catch(() => {
       // Queue persistence is best-effort; keep the current in-memory queue usable.
     })
+    return queuePersistence
   }
 
   async function loadPersistedQueueStateIfNeeded(): Promise<void> {
@@ -5073,13 +5124,20 @@ export function useDesktopState() {
         ...queuedMessagesByThreadId.value,
         [threadId]: nextQueue,
       }
-      persistQueueState()
+      try {
+        await persistQueueState()
+      } catch (unknownError) {
+        queuedMessagesByThreadId.value = { ...queuedMessagesByThreadId.value,
+          [threadId]: (queuedMessagesByThreadId.value[threadId] ?? []).filter(message => message.id !== id) }
+        error.value = unknownError instanceof Error ? unknownError.message : 'Could not save queued message'
+        throw unknownError
+      }
       return
     }
 
     if (isInProgress) {
       shouldAutoScrollOnNextAgentEvent = true
-      void startTurnForThread(
+      await startTurnForThread(
         threadId,
         nextText,
         imageUrls,
@@ -5090,6 +5148,7 @@ export function useDesktopState() {
         const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
         setTurnErrorForThread(threadId, errorMessage)
         error.value = errorMessage
+        throw unknownError
       })
       return
     }
@@ -5178,7 +5237,7 @@ export function useDesktopState() {
       if (permissionMode) permissionModes.value = { ...permissionModes.value, [threadId]: permissionMode }
 
       insertOptimisticThread(threadId, targetCwd, nextText || '[Image]')
-      appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments)
+      const optimisticMessageId = appendOptimisticUserMessage(threadId, nextText, imageUrls, skills, fileAttachments)
       blockInterruptUntilThreadIsPersisted(threadId)
       resumedThreadById.value = {
         ...resumedThreadById.value,
@@ -5200,7 +5259,7 @@ export function useDesktopState() {
       )
       setTurnErrorForThread(threadId, null)
       setThreadInProgress(threadId, true)
-      void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode)
+      void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments, selectedMode, optimisticMessageId)
         .catch((unknownError) => {
           shouldAutoScrollOnNextAgentEvent = false
           setThreadInProgress(threadId, false)
@@ -5236,6 +5295,7 @@ export function useDesktopState() {
     skills: Array<{ name: string; path: string }> = [],
     fileAttachments: FileAttachment[] = [],
     collaborationModeOverride?: CollaborationModeKind,
+    optimisticMessageId?: string,
   ): Promise<void> {
     const permissionMode = permissionModes.value[threadId]
     const reasoningEffort = selectedReasoningEffort.value
@@ -5255,9 +5315,14 @@ export function useDesktopState() {
     }
     const normalizedSkills = skills.map((skill) => ({ name: skill.name, path: skill.path }))
     const normalizedFileAttachments = fileAttachments.map((file) => ({ ...file }))
+    const messageId = optimisticMessageId ?? appendOptimisticUserMessage(
+      threadId, normalizedText, normalizedImageUrls, normalizedSkills, normalizedFileAttachments,
+    )
+    let acknowledged = false
 
     setPendingTurnRequest(threadId, {
       text: normalizedText,
+      messageId,
       imageUrls: [...normalizedImageUrls],
       skills: normalizedSkills,
       fileAttachments: normalizedFileAttachments,
@@ -5301,6 +5366,7 @@ export function useDesktopState() {
           await applyFallbackModelSelection(threadId)
           setPendingTurnRequest(threadId, {
             text: normalizedText,
+            messageId,
             imageUrls: [...normalizedImageUrls],
             skills: normalizedSkills,
             fileAttachments: normalizedFileAttachments,
@@ -5325,6 +5391,8 @@ export function useDesktopState() {
         }
       }
 
+      acknowledged = true
+      updateMessageDelivery(threadId, messageId, { deliveryState: 'sent', turnId: startedTurnId || undefined })
       if (startedTurnId) {
         activeTurnIdByThreadId.value = {
           ...activeTurnIdByThreadId.value,
@@ -5337,6 +5405,10 @@ export function useDesktopState() {
       await syncFromNotifications()
       scheduleDelayedTurnSync(threadId)
     } catch (unknownError) {
+      if (!acknowledged) updateMessageDelivery(threadId, messageId, {
+        deliveryState: 'failed',
+        deliveryError: unknownError instanceof Error ? unknownError.message : 'Send not confirmed',
+      })
       throw unknownError
     }
   }
@@ -5851,7 +5923,7 @@ export function useDesktopState() {
     removeQueuedMessage(messageId)
     setSelectedCollaborationMode(msg.collaborationMode)
     if (msg.permissionMode) setSelectedPermissionMode(msg.permissionMode)
-    void sendMessageToSelectedThread(msg.text, msg.imageUrls, msg.skills, 'steer', msg.fileAttachments)
+    void sendMessageToSelectedThread(msg.text, msg.imageUrls, msg.skills, 'steer', msg.fileAttachments).catch(() => {})
   }
 
   function primeSelectedThread(threadId: string, options: { persist?: boolean } = {}): void {

@@ -38,6 +38,10 @@ export async function rpcCall<T>(method: string, params?: unknown): Promise<T> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      // A lost acknowledgement must eventually release the composer for recovery.
+      // Do not automatically retry a mutation: it may already have reached Codex.
+      ...(['thread/start', 'thread/resume', 'turn/start'].includes(method)
+        ? { signal: AbortSignal.timeout(60_000) } : {}),
     })
   } catch (error) {
     throw new CodexApiError(

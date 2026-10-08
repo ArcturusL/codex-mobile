@@ -2628,6 +2628,7 @@ export async function getThreadQueueState(): Promise<ThreadQueueState> {
 export async function setThreadQueueState(nextState: ThreadQueueState): Promise<void> {
   const response = await fetch('/codex-api/thread-queue-state', {
     method: 'PUT',
+    signal: AbortSignal.timeout(60_000),
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(normalizeThreadQueueState(nextState)),
   })
