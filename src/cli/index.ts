@@ -23,6 +23,7 @@ import {
   resolveAppServerRuntimeConfig,
 } from '../server/appServerRuntimeConfig.js'
 import { createServer as createApp } from '../server/httpServer.js'
+import { canRestartService } from '../server/serviceRestart.js'
 import { generatePassword } from '../server/password.js'
 import { spawnSyncCommand } from '../utils/commandInvocation.js'
 
@@ -484,7 +485,8 @@ async function startServer(options: {
   const generatedPasswordPath = password && passwordResolution.generated
     ? await persistGeneratedPassword(password)
     : null
-  const { app, dispose, attachWebSocket } = createApp({ password })
+  const restartService = await canRestartService() ? () => shutdown(75) : undefined
+  const { app, dispose, attachWebSocket } = createApp({ password, restartService })
   const server = createServer(app)
   attachWebSocket(server)
   const port = await listenWithFallback(server, requestedPort)
@@ -542,24 +544,24 @@ async function startServer(options: {
   console.log(lines.join('\n'))
   if (options.open) openBrowser(`http://localhost:${String(port)}`)
 
-  function shutdown() {
+  function shutdown(exitCode = 0) {
     console.log('\nShutting down...')
     if (tunnelChild && !tunnelChild.killed) {
       tunnelChild.kill('SIGTERM')
     }
     server.close(() => {
       dispose()
-      process.exit(0)
+      process.exit(exitCode)
     })
     // Force exit after timeout
     setTimeout(() => {
       dispose()
-      process.exit(1)
+      process.exit(exitCode || 1)
     }, 5000).unref()
   }
 
-  process.on('SIGINT', shutdown)
-  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', () => shutdown())
+  process.on('SIGTERM', () => shutdown())
 }
 
 async function runLogin() {

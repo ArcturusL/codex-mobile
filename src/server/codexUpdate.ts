@@ -51,7 +51,7 @@ async function readVersion(command: string): Promise<string> {
 }
 
 // ponytail: one updater per server; use a filesystem lock if multiple servers ever share CODEX_HOME.
-export function createCodexUpdater() {
+export function createCodexUpdater(canInstall: () => boolean = () => true) {
   const status: CodexUpdateStatus = {
     currentVersion: null, latestVersion: null, checkedAt: null,
     checking: false, updating: false, updateAvailable: false, restartRequired: false, error: null,
@@ -145,6 +145,7 @@ export function createCodexUpdater() {
   initial.unref()
 
   return {
+    isUpdating: () => status.updating,
     dispose() { clearInterval(timer); clearTimeout(initial) },
     async handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
       const url = new URL(req.url ?? '/', 'http://localhost')
@@ -166,6 +167,11 @@ export function createCodexUpdater() {
         }
         if (!status.updating) {
           await check()
+          if (!canInstall()) {
+            res.statusCode = 409
+            res.end(JSON.stringify({ error: 'Service restart pending. New messages can be sent after reconnecting.' }))
+            return true
+          }
           if (!status.updateAvailable || !status.latestVersion) {
             res.statusCode = 409
             res.end(JSON.stringify({ error: status.error || 'No Codex update is available.' }))

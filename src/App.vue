@@ -454,7 +454,7 @@
               <div class="sidebar-settings-rate-limits">
                 <RateLimitStatus :snapshots="accountRateLimitSnapshots" />
               </div>
-              <CodexUpdateSettings />
+              <CodexUpdateSettings :before-restart="flushPendingQueueWrites" />
               <div class="sidebar-settings-build-label" :aria-label="t('Worktree name and version')">
                 WT {{ worktreeName }} · v{{ appVersion }}
               </div>
@@ -1373,6 +1373,7 @@ const {
   selectedThreadTerminalOpen,
   selectedThreadServerRequests,
   selectedLiveOverlay,
+  flushPendingQueueWrites,
   codexQuota,
   selectedThreadId,
   availableCollaborationModes,

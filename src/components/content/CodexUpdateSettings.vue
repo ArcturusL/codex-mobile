@@ -18,12 +18,13 @@
       </div>
     </div>
     <div class="codex-update-actions">
-      <button type="button" :disabled="pendingAction !== null || isUpdating || isChecking" @click="request('check')">
+      <button type="button" :disabled="restartBusy || pendingAction !== null || isUpdating || isChecking" @click="request('check')">
         {{ isChecking ? t('Checking…') : t('Check for updates') }}
       </button>
-      <button type="button" :disabled="pendingAction !== null || !status?.updateAvailable || isUpdating || isChecking" @click="request('update')">
+      <button type="button" :disabled="restartBusy || pendingAction !== null || !status?.updateAvailable || isUpdating || isChecking" @click="request('update')">
         {{ isUpdating ? t('Updating…') : t('Update now') }}
       </button>
+      <ServiceRestartControl :disabled="isUpdating || pendingAction === 'update'" :before-restart="beforeRestart" @busy="restartBusy = $event" @restarted="request()" />
     </div>
     <p v-if="isUpdating" role="status">{{ t('Downloading and verifying Codex. You can close settings.') }}</p>
   </section>
@@ -34,6 +35,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useUiLanguage } from '../../composables/useUiLanguage'
 import type { CodexUpdateStatus } from '../../shared/codexUpdate'
 import { copyTextToClipboard } from '../../utils/clipboard'
+import ServiceRestartControl from './ServiceRestartControl.vue'
+
+defineProps<{ beforeRestart?: () => Promise<void> }>()
+const restartBusy = ref(false)
 
 const { t } = useUiLanguage()
 const status = ref<CodexUpdateStatus | null>(null)
@@ -88,7 +93,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
 .codex-update-heading, .codex-update-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .codex-update-heading { font-size: 13px; color: #27272a; }
 .codex-update-settings p { margin: 6px 0; overflow-wrap: anywhere; }
-.codex-update-actions { justify-content: flex-start; margin-top: 10px; }
+.codex-update-actions { justify-content: flex-start; flex-wrap: wrap; margin-top: 10px; }
 .codex-update-actions button { border: 1px solid #d4d4d8; border-radius: 6px; padding: 5px 9px; background: #fff; color: inherit; cursor: pointer; }
 .codex-update-actions button:disabled { opacity: .5; cursor: default; }
 .codex-update-actions button:focus-visible { outline: 2px solid #71717a; outline-offset: 2px; }
