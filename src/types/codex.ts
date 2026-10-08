@@ -207,6 +207,7 @@ export type UiPlanData = {
 
 export type UiMessage = {
   id: string
+  createdAtIso?: string
   role: 'user' | 'assistant' | 'system'
   text: string
   images?: string[]

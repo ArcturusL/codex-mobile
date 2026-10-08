@@ -189,6 +189,8 @@ const zhCN: Record<string, string> = {
   'Drop images or files': '拖放图片或文件',
   'Selected image': '已选图片',
   'Loading messages...': '加载消息中...',
+  'Time unknown': '时间未知',
+  'No timestamp recorded for this message': '此消息未记录时间',
   'Plan': '计划',
   'Updating': '更新中',
   'Edit this message': '编辑此消息',
