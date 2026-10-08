@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { getManagedCodexRoot, resolveCodexCommand } from '../commandResolution'
 import { getSpawnInvocation } from '../utils/commandInvocation'
 import type { CodexUpdateStatus } from '../shared/codexUpdate'
+import { cleanupCodexInstallations, readCodexSelection, requireCodexUpdateSpace } from './codexUpdateStorage'
 
 const exec = promisify(execFile)
 const CHECK_INTERVAL = 6 * 60 * 60 * 1000
@@ -96,9 +97,13 @@ export function createCodexUpdater() {
     try {
       const root = getManagedCodexRoot()
       await mkdir(root, { recursive: true, mode: 0o700 })
+      await cleanupCodexInstallations(root)
+      await requireCodexUpdateSpace(root)
+      const previous = await readCodexSelection(root)
       staging = await mkdtemp(join(root, 'install-'))
+      const cache = join(staging, '.npm-cache')
       const invocation = getSpawnInvocation('npm', [
-        'install', '--prefix', staging, '--registry', REGISTRY, '--ignore-scripts',
+        'install', '--prefix', staging, '--cache', cache, '--registry', REGISTRY, '--ignore-scripts',
         '--no-audit', '--no-fund', '--include=optional', '--package-lock=false', '--save-exact', '--prefer-online', '@openai/codex@latest',
       ])
       const { stdout, stderr } = await exec(invocation.command, invocation.args, { timeout: 300_000, maxBuffer: 1024 * 1024, windowsHide: true })
@@ -112,15 +117,18 @@ export function createCodexUpdater() {
         || (status.currentVersion && version !== status.currentVersion && !isNewerCodexVersion(version, status.currentVersion))) {
         throw new Error('Installed Codex version did not match. The previous version is unchanged.')
       }
+      await rm(cache, { recursive: true, force: true })
       // Activate only after validation; keep the previous installation for rollback.
       const pending = join(root, 'current.json.tmp')
-      await writeFile(pending, JSON.stringify({ directory: basename(staging) }), { mode: 0o600 })
+      await writeFile(pending, JSON.stringify({ directory: basename(staging), previousDirectory: previous.directory }), { mode: 0o600 })
       await rename(pending, join(root, 'current.json'))
       staging = undefined
       status.currentVersion = version
       status.latestVersion = version
       status.updateAvailable = false
       status.restartRequired = true
+      // Cleanup is maintenance after successful activation; a failure must not label the installed update as failed.
+      await cleanupCodexInstallations(root).catch(error => console.warn('Codex installation cleanup failed:', error))
     } catch (error) {
       installationError = describeCodexUpdateError(error)
       Object.assign(status, installationError)
